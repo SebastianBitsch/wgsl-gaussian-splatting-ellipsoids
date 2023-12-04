@@ -2,10 +2,65 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Document</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- <script type="text/javascript" src="PlyReader.js"></script> -->
+    <script type="text/javascript" src="utils/helpers.js"></script>
+    <script type="text/javascript" src="app.js"></script>
+    
+    <script id="wgsl" type="x-shader"> 
+
+        @group(0) @binding(0) var<uniform> uniforms : Uniforms;
+
+        struct Uniforms {
+            eps: f32,
+            aspect_ratio: f32,
+            gamma: f32,
+            frame_number: f32,       // u32 in spirit, not possible in practice
+            canvas_width: f32,       // u32 in spirit, not possible in practice
+            canvas_height: f32,      // u32 in spirit, not possible in practice
+            _padding1: f32,
+            camera_const: f32,
+            camera_position: vec3f,
+            camera_viewing_direction: vec3f,
+            camera_up_vector: vec3f,
+        };
+
+        struct VSOut {
+            @builtin(position) position: vec4f,
+            @location(0) coords: vec2f
+        };
+
+        @vertex
+        fn main_vs(@builtin(vertex_index) VertexIndex : u32) -> VSOut {
+            // Origin in bottom left corner (-1, -1). TODO: Move to js, the same for every vert
+            const pos = array<vec2f, 4>(
+                vec2f(-1.0, 1.0), 
+                vec2f(-1.0, -1.0), 
+                vec2f(1.0, 1.0), 
+                vec2f(1.0, -1.0)
+            );
+            
+            return VSOut(
+                vec4f(pos[VertexIndex], 0.0, 1.0),
+                pos[VertexIndex]
+            );
+        }
+
+        @fragment
+        fn main_fs(@location(0) coords: vec2f) -> @location(0) vec4f {
+            return vec4f(0.0, 0.0, 1.0, uniforms.gamma);
+        }
+        
+    </script>
 </head>
 <body>
-    
+    <input type="file" id="file-input" />
+    <h3>Contents of the file:</h3>
+    <pre id="file-content"></pre>
+
+    <canvas id="webgpu-canvas" width=512 height=512>
+        Error: Browser doesn't support HTML5 canvas
+    </canvas>
 </body>
 </html>
