@@ -67,5 +67,7 @@ function parsePly(file) {
     // Parse normals
     // TODO
 
+    // TODO center vertices around origin (0,0,0)
+
     return {"vertices" : vertices};
 }

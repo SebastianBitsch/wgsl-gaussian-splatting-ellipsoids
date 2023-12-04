@@ -10,7 +10,22 @@
     
     <script id="wgsl" type="x-shader"> 
 
+        const PI: f32 = 3.14159265359;
+        const INFINITY: f32 = 1.0e+38;
+        
+        const TMIN: f32 = 0.0;
+        const TMAX: f32 = 100000.0;
+        const MAXBOUNCES: u32 = 10;
+        const BACKGROUNDCOLOR: vec4f = vec4f(0,0,1,1);//vec4f(0.1, 0.3, 0.6, 1.0);
+
+        const MAX_LEVEL: u32 = 20;
+        const BSP_LEAF: u32 = 3;
+        var<private> branch_node: array<vec2u, MAX_LEVEL>; 
+        var<private> branch_ray: array<vec2f, MAX_LEVEL>;
+
         @group(0) @binding(0) var<uniform> uniforms : Uniforms;
+        @group(0) @binding(1) var renderTexture: texture_2d<f32>;
+        @group(0) @binding(2) var<storage> vertex_positions: array<vec3f>;
 
         struct Uniforms {
             eps: f32,
@@ -31,6 +46,50 @@
             @location(0) coords: vec2f
         };
 
+        struct FSOut {
+            @location(0) frame: vec4f, 
+            @location(1) accum: vec4f
+        };
+
+        struct Ray {
+            origin: vec3f,
+            direction: vec3f,
+            t_min: f32,
+            t_max: f32
+        };
+
+        struct HitInfo {
+            has_hit: bool, 
+            dist: f32, 
+            position: vec3f, 
+            normal: vec3f, 
+            material: Material,
+            shader: u32,
+            texcoords: vec2f,
+            use_texture: bool,
+            emit: bool,
+            emit_factor: vec3f,
+            current_ior: f32
+        };
+
+        struct Sphere {
+            center: vec3f,
+            radius: f32,
+            material: Material,
+            shader: u32
+        };
+                
+        struct Material {
+            color: vec3f,
+            emission: vec3f,
+            specular: vec3f,
+            index_of_refraction: f32,
+            specular_reflectance: f32,
+            shininess: f32
+        };
+
+
+
         @vertex
         fn main_vs(@builtin(vertex_index) VertexIndex : u32) -> VSOut {
             // Origin in bottom left corner (-1, -1). TODO: Move to js, the same for every vert
@@ -47,11 +106,175 @@
             );
         }
 
-        @fragment
-        fn main_fs(@location(0) coords: vec2f) -> @location(0) vec4f {
-            return vec4f(0.0, 0.0, 1.0, uniforms.gamma);
+        fn get_camera_ray(uv: vec2f) -> Ray {
+            // Create camera frame - following the procedure outlined in the book p.86
+            let v: vec3f = normalize(uniforms.camera_viewing_direction - uniforms.camera_position);
+            let b1: vec3f = normalize(cross(v, uniforms.camera_up_vector));
+            let b2: vec3f = cross(b1, v);
+
+            return Ray(
+                uniforms.camera_position,
+                b1 * uv.x + b2 * uv.y + v * uniforms.camera_const,
+                TMIN,
+                TMAX
+            );
         }
-        
+
+        fn intersect_sphere(ray: ptr<function, Ray>, sphere: Sphere, hit: ptr<function, HitInfo>) -> bool {            
+            let o_to_sphere: vec3f = (*ray).origin - sphere.center;
+
+            let a: f32 = dot((*ray).direction, (*ray).direction);
+            let b: f32 = 2 * dot(o_to_sphere, (*ray).direction);
+            let c: f32 = dot(o_to_sphere, o_to_sphere) - (sphere.radius * sphere.radius);
+
+            let d: f32 = b * b - 4 * a * c;
+            
+            if (d < 0 ) { return false; }
+            
+            var t: f32;
+            let t1: f32 = (-b - sqrt(d)) / (2.0 * a);
+            let t2: f32 = (-b + sqrt(d)) / (2.0 * a);
+
+            if ((*ray).t_min < t1 && t1 < (*ray).t_max) {
+                t = t1;
+            } else if ((*ray).t_min < t2 && t2 < (*ray).t_max) {
+                t = t2;
+            } else {
+                return false;
+            }
+
+            let hit_pos: vec3f = (*ray).origin + (*ray).direction * t;
+
+            // Update the hit info
+            (*hit).has_hit = true;
+            (*hit).dist = t;
+            (*hit).material = sphere.material;
+            (*hit).position = hit_pos;
+            (*hit).normal = normalize(hit_pos - sphere.center);
+            (*hit).shader = sphere.shader;
+            (*hit).use_texture = false;
+            (*hit).emit = true;
+
+            // We hit the inside of the sphere, flip normal
+            if (0.0 < dot((*ray).direction, (*hit).normal)) {
+                (*hit).normal = -(*hit).normal;
+                (*hit).current_ior = sphere.material.index_of_refraction;
+            }
+            
+            return true;
+        }
+
+
+        fn intersect_scene(ray: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
+            // Scene description
+            let sphere_mat: Material = Material(
+                vec3f(1.0, 0.0, 0.0),        // color
+                vec3f(),        // emission
+                vec3f(),        // specular
+                1.5,            // index_of_refraction
+                0.1,            // specular_reflectance
+                42.0,           // shininess
+            );
+
+            // Intersect spheres
+            // let poses = array<vec3f, 2>(
+            //     vec3f(1.381369948387146, 0, 2.4546899795532227),
+            //     vec3f(1,1,2.5),
+            // );
+            for (var index: u32 = 0; index < arrayLength(&vertex_positions); index++) {
+                let sphere: Sphere = Sphere(
+                    vertex_positions[index],
+                    0.01,
+                    sphere_mat,
+                    0 // mirror
+                );
+                if (intersect_sphere(ray, sphere, hit)) {
+                   (*ray).t_max = (*hit).dist;
+                }
+            }
+
+            return (*hit).has_hit;
+        }
+
+        fn shade(ray: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {            
+            return (*hit).material.color;
+            // switch (*hit).shader {
+            //     case 0 { return (*hit).material.color; }
+            //     case 1 { return lambertian(ray, hit, seed); } 
+            //     case 2 { return mirror(ray, hit); }
+            //     case 3 { return refraction(ray, hit); }
+            //     // case 3 { return fresnel(ray, hit, seed); }
+            //     // case 4 { return phong(ray, hit, light); }
+            //     // case 5 { return glossy(ray, hit, light); }
+            //     case default { return (*hit).material.color; }
+            // }
+        }
+
+        @fragment
+        fn main_fs(@builtin(position) fragcoord: vec4f, @location(0) coords: vec2f) -> FSOut {
+            let launch_idx: u32 = u32(fragcoord.y) * u32(uniforms.canvas_width) + u32(fragcoord.x); 
+            var seed: u32 = tea(launch_idx, u32(uniforms.frame_number));
+            var jitter: vec2f = vec2f(random(&seed), random(&seed)) / f32(uniforms.canvas_height);
+            
+            let jittered_coords = coords;// + jitter;
+
+            let uv = vec2f(jittered_coords.x * uniforms.aspect_ratio * 0.5, jittered_coords.y * 0.5);
+
+            let a = vertex_positions[0];
+
+            var ray = get_camera_ray(uv);
+            var hit = HitInfo();
+            hit.current_ior = 1.0;
+            hit.emit_factor = vec3f(1,1,1);
+            hit.emit = true;
+
+            var shaded_result = vec3f(0,0,0);
+
+            for (var i: u32 = 0; i < MAXBOUNCES; i++) {
+                if (intersect_scene(&ray, &hit)) {
+                    shaded_result += shade(&ray, &hit, &seed);
+                } else {
+                    shaded_result += BACKGROUNDCOLOR.rgb;
+                    break;
+                }
+            }
+            
+            let curr_sum = textureLoad(renderTexture, vec2u(fragcoord.xy), 0).rgb * f32(uniforms.frame_number); 
+            var accum_color = (shaded_result + curr_sum)/(uniforms.frame_number + 1);
+
+            return FSOut(
+                vec4f(pow(accum_color, vec3f(1.0/uniforms.gamma)), 1.0),
+                vec4f(accum_color, 1.0)
+            );
+        }
+
+
+        // PRNG xorshift seed generator by NVIDIA
+        fn tea(val0: u32, val1: u32) -> u32 {
+            const N = 16u; // User specified number of iterations
+            var v0 = val0;
+            var v1 = val1;
+            var s0 = 0u;
+            for (var n = 0u; n < N; n++) {
+                s0 += 0x9e3779b9;
+                v0 += ((v1<<4)+0xa341316c)^(v1+s0)^((v1>>5)+0xc8013ea4);
+                v1 += ((v0<<4)+0xad90777d)^(v0+s0)^((v0>>5)+0x7e95761e);
+            }
+            return v0;
+        }
+
+        // Generate random unsigned int in [0, 2^31)
+        fn mcg31(prev: ptr<function, u32>) -> u32 {
+            const LCG_A = 1977654935u; // Multiplier from Hui-Ching Tang [EJOR 2007] 
+            *prev = (LCG_A * (*prev)) & 0x7FFFFFFF;
+            return *prev;
+        }
+        // Generate random float in [0, 1)
+        fn random(prev: ptr<function, u32>) -> f32 {
+            return f32(mcg31(prev)) / f32(0x80000000); 
+        }
+
+
     </script>
 </head>
 <body>
