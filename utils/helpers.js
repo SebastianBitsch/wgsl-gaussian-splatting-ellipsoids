@@ -73,3 +73,23 @@ function formatTime(milliseconds) {
 
     return `${milliseconds.toFixed(3)} ms (${seconds} seconds, ${minutes} minutes)`;
 }
+
+
+function rotateCamera(deltaX, deltaY, sensitivity, cameraPos, cameraUp, cameraDir) {
+    // Calculating horizontal and vertical rotation angles
+    var horizontalAngle = radians(deltaX * sensitivity);
+    var verticalAngle = radians(deltaY * sensitivity);
+
+    // Rotate around the up vector for horizontal rotation
+    var horizontalRotation = rotate(horizontalAngle, cameraUp);
+    
+    // Determining the right vector for vertical rotation
+    var rightVector = cross(cameraUp, subtract(cameraPos, cameraDir));
+    var verticalRotation = rotate(verticalAngle, rightVector);
+
+    // Applying rotations to the camera position
+    cameraPos = mult(horizontalRotation, cameraPos);
+    cameraPos = mult(verticalRotation, cameraPos);
+
+    return cameraPos;
+}

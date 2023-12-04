@@ -6,14 +6,16 @@ var doProgressiveUpdating = false;
 var totalRuntime = null;
 var currentRuntime = null;
 
-var uniformBuffer;
-var drawingInfo;
-var bindGroup;
+// Camera movement variables
+var cameraSensitivity = 10;
+var dragging = false;
+var lastMouseX = -1;
+var lastMouseY = -1;
 
 // Camera positions for different scenes
-let bunny_camera = {"camera_const": 3.5, "camera_position": [-0.02, 0.11, 0.6, 0], "camera_viewing_direction" : [-0.02, 0.11, 0.0, 0], "camera_up_vector": [0.0, 1.0, 0.0, 0]};
-let box_camera = {"camera_const": 1.0, "camera_position": [277.0, 275.0, -570.0, 0], "camera_viewing_direction" : [277.0, 275.0, 0.0, 0], "camera_up_vector": [0.0, 1.0, 0.0, 0]};
-let teapot_camera = {"camera_const": 2.5, "camera_position": [12, 12, 8, 0], "camera_viewing_direction" : [0, 0, 1, 0], "camera_up_vector": [0.0, 0.0, 1.0, 0]};
+let bunny_camera = {"camera_const": 3.5, "camera_position": [-0.02, 0.11, 0.6, 0], "camera_look_point" : [-0.02, 0.11, 0.0, 0], "camera_up_vector": [0.0, 1.0, 0.0, 0]};
+let box_camera = {"camera_const": 1.0, "camera_position": [277.0, 275.0, -570.0, 0], "camera_look_point" : [277.0, 275.0, 0.0, 0], "camera_up_vector": [0.0, 1.0, 0.0, 0]};
+let teapot_camera = {"camera_const": 2.5, "camera_position": [12, 12, 8, 0], "camera_look_point" : [0, 0, 1, 0], "camera_up_vector": [0.0, 0.0, 1.0, 0]};
 
 var uniforms = {
     "eps" : 1e-2,
@@ -25,13 +27,13 @@ var uniforms = {
     "_padding2" : 0,
     "camera_const" : 1.0,
     "camera_position" : 1.0,
-    "camera_viewing_direction" : 1.0,
+    "camera_look_point" : 1.0,
     "camera_up_vector" : 1.0, 
 };
 
-let isDragging = false;
-let lastMouseX = 0;
-let lastMouseY = 0;
+var uniformBuffer;
+var drawingInfo;
+var bindGroup;
 
 // Add camera to uniforms, swap camera depending on scene. Camera should be part of scene description i think
 uniforms = Object.assign({}, uniforms, teapot_camera);
@@ -115,7 +117,6 @@ function animate(device, context, pipeline, bindGroup, textures) {
     let uniformValues = new Float32Array(Object.values(uniforms).flat());
     device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
 
-    console.log(uniforms['camera_const']);
     if (uniforms['frame_number'] % LOG_INTERVAL == 0) {
         console.log(`%c${uniforms['frame_number']} samples%c: \n| Total Runtime:\t${formatTime(performance.now())} \n| Total frames:\t\t${uniforms['frame_number']} \n| Average time per frame:\t${(uniforms['frame_number'] / performance.now()).toFixed(3)} ms`, "font-weight: bold", "font-weight: normal");
     }
@@ -220,4 +221,36 @@ window.onload = async function () {
             });
         }
     };
+
+    /* Handle camera movement */
+    // See mouseevents: https://developer.mozilla.org/en-US/docs/Web/API/Element/mousedown_event
+    canvas.addEventListener('mouseleave', function(_) {
+        dragging = false;
+    });
+    
+    canvas.addEventListener('mouseup', function(_) {
+        dragging = false;
+    });
+
+    canvas.addEventListener('mousedown', function(e) {
+        dragging = true;
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+    });
+    
+    canvas.addEventListener('mousemove', function(e) {
+        if (dragging) {
+            var deltaX = e.clientX - lastMouseX;
+            var deltaY = e.clientY - lastMouseY;
+            uniforms['camera_position'] = rotateCamera(deltaX, deltaY, cameraSensitivity, uniforms['camera_position'], uniforms['camera_up_vector'], uniforms['camera_look_point']);
+
+            if (!doProgressiveUpdating) {
+                requestAnimationFrame(() => {
+                    animate(device, context, pipeline, bindGroup, textures);
+                });
+            }
+        }
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
+    });
 };

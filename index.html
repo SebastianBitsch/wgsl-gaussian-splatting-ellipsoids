@@ -5,6 +5,7 @@
     <title>Document</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- <script type="text/javascript" src="PlyReader.js"></script> -->
+    <script type="text/javascript" src="utils/MV.js"></script>
     <script type="text/javascript" src="utils/helpers.js"></script>
     <script type="text/javascript" src="app.js"></script>
     
@@ -37,7 +38,7 @@
             _padding1: f32,
             camera_const: f32,
             camera_position: vec3f,
-            camera_viewing_direction: vec3f,
+            camera_look_point: vec3f,
             camera_up_vector: vec3f,
         };
 
@@ -108,7 +109,7 @@
 
         fn get_camera_ray(uv: vec2f) -> Ray {
             // Create camera frame - following the procedure outlined in the book p.86
-            let v: vec3f = normalize(uniforms.camera_viewing_direction - uniforms.camera_position);
+            let v: vec3f = normalize(uniforms.camera_look_point - uniforms.camera_position);
             let b1: vec3f = normalize(cross(v, uniforms.camera_up_vector));
             let b2: vec3f = cross(b1, v);
 
@@ -176,15 +177,11 @@
                 42.0,           // shininess
             );
 
-            // Intersect spheres
-            // let poses = array<vec3f, 2>(
-            //     vec3f(1.381369948387146, 0, 2.4546899795532227),
-            //     vec3f(1,1,2.5),
-            // );
+
             for (var index: u32 = 0; index < arrayLength(&vertex_positions); index++) {
                 let sphere: Sphere = Sphere(
                     vertex_positions[index],
-                    0.01,
+                    0.025,
                     sphere_mat,
                     0 // mirror
                 );
@@ -243,7 +240,8 @@
             var accum_color = (shaded_result + curr_sum)/(uniforms.frame_number + 1);
 
             return FSOut(
-                vec4f(pow(accum_color, vec3f(1.0/uniforms.gamma)), 1.0),
+                // vec4f(pow(accum_color, vec3f(1.0/uniforms.gamma)), 1.0),
+                vec4f(pow(shaded_result, vec3f(1.0/uniforms.gamma)), 1.0),
                 vec4f(accum_color, 1.0)
             );
         }
