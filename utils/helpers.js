@@ -25,12 +25,6 @@ function readSingleFile(e) {
     reader.readAsText(file);
 }
 
-function displayContents(contents) {
-    var element = document.getElementById('file-content');
-    element.textContent = contents;
-}
-
-
 
 /**
  * Bare bones .ply file parser. Makes a lot of assumptions about how the data looks 
@@ -70,4 +64,12 @@ function parsePly(file) {
     // TODO center vertices around origin (0,0,0)
 
     return {"vertices" : vertices};
+}
+
+
+function formatTime(milliseconds) {
+    let seconds = (milliseconds / 1000).toFixed(2); // Convert to seconds and round to 2 decimal places
+    let minutes = (milliseconds / 60000).toFixed(2); // Convert to minutes and round to 2 decimal places
+
+    return `${milliseconds.toFixed(3)} ms (${seconds} seconds, ${minutes} minutes)`;
 }

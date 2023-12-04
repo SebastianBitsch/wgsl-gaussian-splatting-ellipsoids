@@ -278,12 +278,29 @@
     </script>
 </head>
 <body>
-    <input type="file" id="file-input" />
-    <h3>Contents of the file:</h3>
-    <pre id="file-content"></pre>
+    <input type="file" id="file-input" /><br>
 
     <canvas id="webgpu-canvas" width=512 height=512>
         Error: Browser doesn't support HTML5 canvas
     </canvas>
+
+    <!-------- Interface -------->
+    <table>
+        <!-- Zoom -->
+        <tr>
+            <td colspan="2">
+                <!-- NOTE: oninput not supported in IE10, but nobody uses it and oninput gives nice smooth slide -->
+                <input type="range" id="zoom-slider" name="zoom-slider" min="0.1" max="10" step ="0.1" value="3." list="markers" oninput=onZoomSliderChange(this.value)>
+                <label id="zoom-label">Zoom: 1</label>
+            </td>
+        </tr>
+        <!-- Update -->
+        <tr>
+            <td colspan="2">
+                <input type="checkbox" id="progressive-update-checkbox" name="progressive-update-checkbox" onchange=onDoProgressiveUpdatesChange(this.checked)>
+                <label for="progressive-update-checkbox">Use progressive updating</label>
+            </td>
+        </tr>
+    </table>
 </body>
 </html>
