@@ -1,5 +1,7 @@
 "use strict"; // With strict mode, you can not, for example, use undeclared variables.
 
+var a; // for debugging in console
+
 // Logging variables
 const LOG_INTERVAL = 1000;
 var doProgressiveUpdating = false;
@@ -15,7 +17,7 @@ var lastMouseY = -1;
 // Camera positions for different scenes
 let bunny_camera = {"camera_const": 3.5, "camera_position": [-0.02, 0.11, 0.6, 0], "camera_look_point" : [-0.02, 0.11, 0.0, 0], "camera_up_vector": [0.0, 1.0, 0.0, 0]};
 let box_camera = {"camera_const": 1.0, "camera_position": [277.0, 275.0, -570.0, 0], "camera_look_point" : [277.0, 275.0, 0.0, 0], "camera_up_vector": [0.0, 1.0, 0.0, 0]};
-let teapot_camera = {"camera_const": 2.5, "camera_position": [12, 12, 8, 0], "camera_look_point" : [0, 0, 1, 0], "camera_up_vector": [0.0, 0.0, 1.0, 0]};
+let teapot_camera = {"camera_const": 2.5, "camera_position": [-8, 12, -8, 0], "camera_look_point" : [0, 0, 1, 0], "camera_up_vector": [0.0, 0.0, 1.0, 0]};
 
 var uniforms = {
     "eps" : 1e-2,
@@ -63,20 +65,27 @@ function configureBindGroup(device, drawingInfo, pipeline, textures) {
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
     
-    const vertexPositionsBuffer = device.createBuffer({
+    const verticesBuffer = device.createBuffer({
         size: drawingInfo.vertices.byteLength,
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
     });
 
+    const sphericalHarmonicsBuffer = device.createBuffer({
+        size: drawingInfo.sphericalHarmonics.byteLength,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    });
+
     device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
-    device.queue.writeBuffer(vertexPositionsBuffer, 0, drawingInfo.vertices);
+    device.queue.writeBuffer(verticesBuffer, 0, drawingInfo.vertices);
+    device.queue.writeBuffer(sphericalHarmonicsBuffer, 0, drawingInfo.sphericalHarmonics);
 
     var bindGroup = device.createBindGroup({ 
         layout: pipeline.getBindGroupLayout(0), 
         entries: [
             { binding: 0, resource: { buffer: uniformBuffer }},
             { binding: 1, resource: textures.renderDst.createView() },
-            { binding: 2, resource: { buffer: vertexPositionsBuffer }}
+            { binding: 2, resource: { buffer: verticesBuffer }},
+            { binding: 3, resource: { buffer: sphericalHarmonicsBuffer }}
         ],
     });
 
@@ -110,6 +119,8 @@ function render(device, context, textures, bindGroup, pipeline) {
 
 function animate(device, context, pipeline, bindGroup, textures) {
     // Render the scene
+    // bindGroup = configureBindGroup(device, a, pipeline, textures); - no problem writing the buffer, very fast 
+
     render(device, context, textures, bindGroup, pipeline);
     
     // Update uniforms with the new frame number
@@ -140,11 +151,15 @@ window.onload = async function () {
 
     const gpu = navigator.gpu;
     if (!gpu) {
-        document.write("Error: Browser doesn't support gpu");
+        document.write("Error: Browser doesn't support WebGPU. Use Chrome.");
         return;
     }
     // ------------- Do setup -------------
     const adapter = await gpu.requestAdapter();
+    if (!adapter) {
+        document.write("Error: No available WebGPU adapters.");
+        return;
+    }
     const device = await adapter.requestDevice();
 
     const canvas = document.getElementById("webgpu-canvas");
@@ -184,10 +199,15 @@ window.onload = async function () {
     uniforms["canvas_height"] = canvas.height;
     uniforms["aspect_ratio"] = canvas.width / canvas.height;
 
+    readFile("data/point_cloud.ply", function(response) {
+        a = response;
+        const [headerString, bodyBuffer] = splitHeaderAndBody(response);
+        const header = parseHeader(headerString);
+        const drawingInfo = parseBody(header, bodyBuffer);
 
-    readFile("data/teapot.ply", function() {
+        a = drawingInfo;
+        // displayContents(headerString);
         
-        drawingInfo = parsePly(this.responseText);
         bindGroup = configureBindGroup(device, drawingInfo, pipeline, textures);
 
         requestAnimationFrame(() => {
@@ -243,6 +263,7 @@ window.onload = async function () {
             var deltaX = e.clientX - lastMouseX;
             var deltaY = e.clientY - lastMouseY;
             uniforms['camera_position'] = rotateCamera(deltaX, deltaY, cameraSensitivity, uniforms['camera_position'], uniforms['camera_up_vector'], uniforms['camera_look_point']);
+            uniforms["frame_number"] = 0;
 
             if (!doProgressiveUpdating) {
                 requestAnimationFrame(() => {

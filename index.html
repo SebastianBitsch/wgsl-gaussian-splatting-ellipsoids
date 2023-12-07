@@ -16,7 +16,7 @@
         
         const TMIN: f32 = 0.0;
         const TMAX: f32 = 100000.0;
-        const MAXBOUNCES: u32 = 10;
+        const MAXBOUNCES: u32 = 1;
         const BACKGROUNDCOLOR: vec4f = vec4f(0,0,1,1);//vec4f(0.1, 0.3, 0.6, 1.0);
 
         const MAX_LEVEL: u32 = 20;
@@ -26,7 +26,10 @@
 
         @group(0) @binding(0) var<uniform> uniforms : Uniforms;
         @group(0) @binding(1) var renderTexture: texture_2d<f32>;
-        @group(0) @binding(2) var<storage> vertex_positions: array<vec3f>;
+
+        @group(0) @binding(2) var<storage, read> vertices: array<Vertex>;
+        @group(0) @binding(3) var<storage, read> spherical_harmonics: array<SphericalHarmonics>;
+
 
         struct Uniforms {
             eps: f32,
@@ -40,6 +43,18 @@
             camera_position: vec3f,
             camera_look_point: vec3f,
             camera_up_vector: vec3f,
+        };
+
+        struct Vertex {
+            position: vec3f,
+            normal: vec3f,
+            opacity: f32,
+            scale: vec3f,
+            rotation: vec4f
+        };
+
+        struct SphericalHarmonics {
+            coeffs: array<vec3<f32>, 16>
         };
 
         struct VSOut {
@@ -177,10 +192,10 @@
                 42.0,           // shininess
             );
 
-
-            for (var index: u32 = 0; index < arrayLength(&vertex_positions); index++) {
+            // This is the bottleneck - too many points takes forever
+            for (var index: u32 = 0; index < 2500; index++) { // arrayLength(&vertices)
                 let sphere: Sphere = Sphere(
-                    vertex_positions[index],
+                    vertices[index].position,
                     0.025,
                     sphere_mat,
                     0 // mirror
@@ -217,7 +232,8 @@
 
             let uv = vec2f(jittered_coords.x * uniforms.aspect_ratio * 0.5, jittered_coords.y * 0.5);
 
-            let a = vertex_positions[0];
+            let a = vertices[0];
+            let b = spherical_harmonics[0];
 
             var ray = get_camera_ray(uv);
             var hit = HitInfo();
@@ -277,6 +293,7 @@
 </head>
 <body>
     <input type="file" id="file-input" /><br>
+    <pre id="file-content"></pre>
 
     <canvas id="webgpu-canvas" width=512 height=512>
         Error: Browser doesn't support HTML5 canvas
