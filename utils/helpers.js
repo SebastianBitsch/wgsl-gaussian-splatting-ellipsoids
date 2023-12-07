@@ -184,3 +184,18 @@ function displayContents(contents) {
     var element = document.getElementById('file-content');
     element.textContent = contents;
 }
+
+
+// TODO: Not the nicest implementation - should also be able to log fps to file etc.
+var lastFrameTime = 0.0;
+var currentFrameTime = 0.0;
+function updateFPSCounter(e, setNa = false) {
+    currentFrameTime = performance.now();
+
+    if (setNa) {
+        e.innerHTML = "FPS: --";
+    } else {
+        e.innerHTML = "FPS: " + parseInt(1000.0 / (currentFrameTime - lastFrameTime));
+    }
+    lastFrameTime = currentFrameTime;
+}
