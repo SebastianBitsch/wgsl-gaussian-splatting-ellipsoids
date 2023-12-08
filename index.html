@@ -17,7 +17,7 @@
         const TMIN: f32 = 0.0;
         const TMAX: f32 = 100000.0;
         const MAXBOUNCES: u32 = 10;
-        const BACKGROUNDCOLOR: vec4f = vec4f(0.3); //vec4f(0.1, 0.3, 0.6, 1.0);
+        const BACKGROUNDCOLOR: vec4f = vec4f(0.0); //vec4f(0.1, 0.3, 0.6, 1.0);
 
         const MAX_LEVEL: u32 = 20;
         const BSP_LEAF: u32 = 3;
@@ -106,7 +106,7 @@
         struct Plane {
             position: vec3f,
             normal: vec3f,
-            color: vec3f
+            material: Material
         };
 
 
@@ -281,12 +281,12 @@
             (*hit).dist = t;
             (*hit).gaussian = gaussian;
             (*hit).position = hit_pos;
+            (*hit).material = gaussian.material;
             (*hit).shader = 1;
 
             // Calculate the normal at the hit position
             let normal_at_hit: vec3f = calculate_rotated_normal(hit_pos, gaussian);
 
-            (*hit).normal = normal_at_hit;
             // Determine if the ray is entering or exiting the ellipsoid
             if (0.0 < dot((*ray).direction, normal_at_hit)) {
                 // We're exiting the ellipsoid
@@ -297,7 +297,6 @@
                 (*hit).normal = normal_at_hit;
                 (*hit).entry = hit_pos;
             }
-            (*hit).material = gaussian.material;
 
             return (*hit).has_hit;
         }
@@ -320,14 +319,7 @@
             // Update the hit info
             (*hit).has_hit = true;
             (*hit).dist = t;
-            (*hit).material = Material(
-                plane.color,   // color
-                vec3f(),        // emission
-                vec3f(),        // specular
-                1.5,            // index_of_refraction
-                0.1,            // specular_reflectance
-                42.0,           // shininess
-            );
+            (*hit).material = plane.material;
             (*hit).position = (*ray).origin + (*ray).direction * t;
             (*hit).normal = normalize(plane.normal);
             (*hit).shader = 0;
@@ -342,11 +334,23 @@
             var sphere_mat = default_material;
             var gauss1_mat = default_material;
             var gauss2_mat = default_material;
+            var plane_mat = default_material;
             sphere_mat.color = vec3f(0.5, 0.0, 0.0);
-            gauss1_mat.color = vec3f(0.0, 0.3, 0.0);
-            gauss2_mat.color = vec3f(0.0, 0.0, 0.3);
+            gauss1_mat.color = vec3f(0.5, 0.0, 0.0);
+            gauss2_mat.color = vec3f(0.0, 0.0, 0.5);
+            plane_mat.color = vec3f(.1);
 
-        
+            let sphere: Sphere = Sphere(
+                vec3(2.5,0,0),
+                1,
+                sphere_mat,
+                0 // shader
+            );
+            let plane = Plane(
+                vec3f(0, 0, 0),
+                vec3f(0, 0.0, -1.0),
+                plane_mat
+            );
             var gauss1: Gaussian = Gaussian(
                 vec3f(0,0,0),   // pos
                 vec3f(1,1,1),   // normal
@@ -366,29 +370,18 @@
             // rotates around the y-axis: vec4f(0.0, 0.7071067811865476, 0.0, 0.7071067811865475)
             // rotates around the z-axis: vec4f(0.0, 0.0, 0.7071067811865476, 0.7071067811865475)
 
-            if (intersect_ellipsoid(ray, gauss1, hit)) {
-                (*ray).t_max = (*hit).dist;
-            }
             if (intersect_ellipsoid(ray, gauss2, hit)) {
                 (*ray).t_max = (*hit).dist;
             }
 
-            let sphere: Sphere = Sphere(
-                vec3(2.5,0,0),
-                1,
-                sphere_mat,
-                0 // shader
-            );
+            if (intersect_ellipsoid(ray, gauss1, hit)) {
+                (*ray).t_max = (*hit).dist;
+            }
+
             if (intersect_sphere(ray, sphere, hit)) {
                (*ray).t_max = (*hit).dist;
             }
 
-
-            const plane = Plane(
-                vec3f(0, 0, 0),
-                vec3f(0, 0.0, -1.0),
-                vec3f(.1) // Color
-            );
             // if (intersect_plane(ray, plane, hit)) {
             //     (*ray).t_max = (*hit).dist;
             // }
@@ -424,10 +417,17 @@
                     (*ray).t_min = uniforms.eps;
                     (*ray).t_max = TMAX;
 
-                    if (length((*hit).exit) == 0.0) {
+                    // If we are exiting the gauss
+                    if (length((*hit).exit) != 0.0) {;
+                        let out = (*hit).material.color * calculate_alpha(hit, (*hit).gaussian);
+                        (*hit).exit = vec3f();
+                        (*hit).entry = vec3f();
+                        return out;
+
+                    // We are just entering the gaussian
+                    } else {
                         return vec3f();
                     }
-                    return (*hit).material.color * calculate_alpha(hit, (*hit).gaussian);
                 } 
                 case default { return (*hit).material.color; }
             }
