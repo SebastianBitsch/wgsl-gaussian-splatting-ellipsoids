@@ -16,8 +16,8 @@
         
         const TMIN: f32 = 0.0;
         const TMAX: f32 = 100000.0;
-        const MAXBOUNCES: u32 = 1;
-        const BACKGROUNDCOLOR: vec4f = vec4f(0,0,1,1);//vec4f(0.1, 0.3, 0.6, 1.0);
+        const MAXBOUNCES: u32 = 10;
+        const BACKGROUNDCOLOR: vec4f = vec4f(0.3); //vec4f(0.1, 0.3, 0.6, 1.0);
 
         const MAX_LEVEL: u32 = 20;
         const BSP_LEAF: u32 = 3;
@@ -27,7 +27,7 @@
         @group(0) @binding(0) var<uniform> uniforms : Uniforms;
         @group(0) @binding(1) var renderTexture: texture_2d<f32>;
 
-        @group(0) @binding(2) var<storage, read> vertices: array<Vertex>;
+        @group(0) @binding(2) var<storage, read> gaussians: array<Gaussian>;
         @group(0) @binding(3) var<storage, read> spherical_harmonics: array<SphericalHarmonics>;
 
 
@@ -45,12 +45,13 @@
             camera_up_vector: vec3f,
         };
 
-        struct Vertex {
+        struct Gaussian {
             position: vec3f,
             normal: vec3f,
             opacity: f32,
             scale: vec3f,
-            rotation: vec4f
+            rotation: vec4f,
+            material: Material // TODO: THIS is temporary for debugging
         };
 
         struct SphericalHarmonics {
@@ -81,11 +82,9 @@
             normal: vec3f, 
             material: Material,
             shader: u32,
-            texcoords: vec2f,
-            use_texture: bool,
-            emit: bool,
-            emit_factor: vec3f,
-            current_ior: f32
+            entry: vec3f,
+            exit: vec3f,
+            gaussian: Gaussian
         };
 
         struct Sphere {
@@ -104,6 +103,11 @@
             shininess: f32
         };
 
+        struct Plane {
+            position: vec3f,
+            normal: vec3f,
+            color: vec3f
+        };
 
 
         @vertex
@@ -168,58 +172,265 @@
             (*hit).position = hit_pos;
             (*hit).normal = normalize(hit_pos - sphere.center);
             (*hit).shader = sphere.shader;
-            (*hit).use_texture = false;
-            (*hit).emit = true;
 
             // We hit the inside of the sphere, flip normal
             if (0.0 < dot((*ray).direction, (*hit).normal)) {
                 (*hit).normal = -(*hit).normal;
-                (*hit).current_ior = sphere.material.index_of_refraction;
             }
             
             return true;
         }
 
 
-        fn intersect_scene(ray: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
-            // Scene description
-            let sphere_mat: Material = Material(
-                vec3f(1.0, 0.0, 0.0),        // color
+        fn quaternion_to_matrix(q: vec4<f32>) -> mat3x3<f32> {
+            // See: "Quaternion-derived rotation matrix" https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation 
+            let xx = q.x * q.x;
+            let yy = q.y * q.y;
+            let zz = q.z * q.z;
+            let xy = q.x * q.y;
+            let xz = q.x * q.z;
+            let yz = q.y * q.z;
+            let wx = q.w * q.x;
+            let wy = q.w * q.y;
+            let wz = q.w * q.z;
+
+            return mat3x3<f32>(
+                vec3<f32>(1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy)),
+                vec3<f32>(2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx)),
+                vec3<f32>(2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy))
+            );
+        }
+
+        fn rotate_vector(normal: vec3<f32>, rotation_matrix: mat3x3<f32>) -> vec3<f32> {
+            return rotation_matrix * normal;
+        }
+
+        // Function to calculate normal for a rotated ellipsoid
+        fn calculate_rotated_normal(hit_pos: vec3<f32>, gaussian: Gaussian) -> vec3<f32> {
+            // Calculate the rotation matrix from the quaternion
+            let rotation_matrix = quaternion_to_matrix(gaussian.rotation);
+            
+            // Inverse rotation is the transpose of the rotation matrix
+            let inverse_rotation_matrix = transpose(rotation_matrix);
+            
+            // Transform the hit position into the local space of the ellipsoid
+            let local_hit_pos = rotate_vector(hit_pos - gaussian.position, inverse_rotation_matrix);
+            
+            // Calculate the normal in local space
+            let local_normal = normalize(vec3(
+                local_hit_pos.x / (gaussian.scale.x * gaussian.scale.x),
+                local_hit_pos.y / (gaussian.scale.y * gaussian.scale.y),
+                local_hit_pos.z / (gaussian.scale.z * gaussian.scale.z)
+            ));
+            
+            // Rotate the normal back to world space
+            let world_normal = rotate_vector(local_normal, rotation_matrix);
+            
+            return world_normal;
+        }        
+
+
+        fn calculate_alpha(hit: ptr<function, HitInfo>, gaussian: Gaussian) -> f32 {
+            let midPoint: vec3f = ((*hit).entry + (*hit).exit) * 0.5;
+            let distanceFromCenter: f32 = length(midPoint - gaussian.position);
+            let sigma: f32 = length(gaussian.scale) / 2.0;  // Assuming uniform scale for simplicity
+            let alphaAtMidPoint: f32 = exp(-distanceFromCenter * distanceFromCenter / (2.0 * sigma * sigma));
+            
+            let pathLength: f32 = length((*hit).exit - (*hit).entry);
+            let totalAlpha: f32 = alphaAtMidPoint * pathLength;  // Approximate total alpha
+            return totalAlpha;
+        }
+
+
+        fn intersect_ellipsoid(ray: ptr<function, Ray>, gaussian: Gaussian, hit: ptr<function, HitInfo>) -> bool {
+            // Convert quaternion to rotation matrix
+            let rotationMatrix = quaternion_to_matrix(gaussian.rotation);
+
+            // Transform ray to ellipsoid's local space
+            let transformedRayOrigin = ((*ray).origin - gaussian.position) * rotationMatrix;
+            let transformedRayDirection = (*ray).direction * rotationMatrix;
+
+            // Scale the transformed ray to account for ellipsoid scaling
+            let scaledRayOrigin = transformedRayOrigin / gaussian.scale;
+            let scaledRayDirection = transformedRayDirection / gaussian.scale;
+
+            // Compute coefficients of the quadratic equation
+            let a = dot(scaledRayDirection, scaledRayDirection);
+            let b = 2.0 * dot(scaledRayDirection, scaledRayOrigin);
+            let c = dot(scaledRayOrigin, scaledRayOrigin) - 1.0;
+
+            let d: f32 = b * b - 4 * a * c;
+            
+            if (d < 0 ) { return false; }
+            
+            var t: f32;
+            let t1: f32 = (-b - sqrt(d)) / (2.0 * a);
+            let t2: f32 = (-b + sqrt(d)) / (2.0 * a);
+
+            if ((*ray).t_min < t1 && t1 < (*ray).t_max) {
+                t = t1;
+            } else if ((*ray).t_min < t2 && t2 < (*ray).t_max) {
+                t = t2;
+            } else {
+                return false;
+            }
+            let hit_pos: vec3f = (*ray).origin + (*ray).direction * t;
+
+            // Calculate color and opacity based on Gaussian parameters
+            (*hit).has_hit = true;
+            (*hit).dist = t;
+            (*hit).gaussian = gaussian;
+            (*hit).position = hit_pos;
+            (*hit).shader = 1;
+
+            // Calculate the normal at the hit position
+            let normal_at_hit: vec3f = calculate_rotated_normal(hit_pos, gaussian);
+
+            (*hit).normal = normal_at_hit;
+            // Determine if the ray is entering or exiting the ellipsoid
+            if (0.0 < dot((*ray).direction, normal_at_hit)) {
+                // We're exiting the ellipsoid
+                (*hit).normal = -normal_at_hit;  // Flip the normal
+                (*hit).exit = hit_pos;
+            } else {
+                // We're entering the ellipsoid
+                (*hit).normal = normal_at_hit;
+                (*hit).entry = hit_pos;
+            }
+            (*hit).material = gaussian.material;
+
+            return (*hit).has_hit;
+        }
+
+        fn intersect_plane(ray: ptr<function, Ray>, plane: Plane, hit: ptr<function, HitInfo>) -> bool {
+            let o_to_plane: vec3f = plane.position - (*ray).origin;
+            let denominator = dot((*ray).direction, plane.normal);
+            
+            // The plane and the ray are parallel when the denominator gets close to 0
+            if (abs(denominator) < uniforms.eps) {
+                return false;
+            }
+
+            let t = dot(o_to_plane, plane.normal) / denominator;
+
+            if (t < (*ray).t_min || (*ray).t_max < t) {
+                return false;
+            }
+            
+            // Update the hit info
+            (*hit).has_hit = true;
+            (*hit).dist = t;
+            (*hit).material = Material(
+                plane.color,   // color
                 vec3f(),        // emission
                 vec3f(),        // specular
                 1.5,            // index_of_refraction
                 0.1,            // specular_reflectance
                 42.0,           // shininess
             );
+            (*hit).position = (*ray).origin + (*ray).direction * t;
+            (*hit).normal = normalize(plane.normal);
+            (*hit).shader = 0;
+
+            return true;
+        }
+
+
+        fn intersect_scene(ray: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
+            // Scene description
+            let default_material: Material = Material();
+            var sphere_mat = default_material;
+            var gauss1_mat = default_material;
+            var gauss2_mat = default_material;
+            sphere_mat.color = vec3f(0.5, 0.0, 0.0);
+            gauss1_mat.color = vec3f(0.0, 0.3, 0.0);
+            gauss2_mat.color = vec3f(0.0, 0.0, 0.3);
+
+        
+            var gauss1: Gaussian = Gaussian(
+                vec3f(0,0,0),   // pos
+                vec3f(1,1,1),   // normal
+                1.0,            // opacity
+                vec3f(1,1,2),   // scale
+                vec4f(0, .3, 0, .7),    // rotation
+                gauss1_mat
+            );
+            var gauss2: Gaussian = Gaussian(
+                vec3f(0,5,0),   // pos
+                vec3f(1,1,1),   // normal
+                1.0,            // opacity
+                vec3f(1,1,2),   // scale
+                vec4f(0, .3, 0, .7),    // rotation
+                gauss2_mat
+            );
+            // rotates around the y-axis: vec4f(0.0, 0.7071067811865476, 0.0, 0.7071067811865475)
+            // rotates around the z-axis: vec4f(0.0, 0.0, 0.7071067811865476, 0.7071067811865475)
+
+            if (intersect_ellipsoid(ray, gauss1, hit)) {
+                (*ray).t_max = (*hit).dist;
+            }
+            if (intersect_ellipsoid(ray, gauss2, hit)) {
+                (*ray).t_max = (*hit).dist;
+            }
+
+            let sphere: Sphere = Sphere(
+                vec3(2.5,0,0),
+                1,
+                sphere_mat,
+                0 // shader
+            );
+            if (intersect_sphere(ray, sphere, hit)) {
+               (*ray).t_max = (*hit).dist;
+            }
+
+
+            const plane = Plane(
+                vec3f(0, 0, 0),
+                vec3f(0, 0.0, -1.0),
+                vec3f(.1) // Color
+            );
+            // if (intersect_plane(ray, plane, hit)) {
+            //     (*ray).t_max = (*hit).dist;
+            // }
 
             // This is the bottleneck - too many points takes forever
-            for (var index: u32 = 0; index < 2500; index++) { // arrayLength(&vertices)
-                let sphere: Sphere = Sphere(
-                    vertices[index].position,
-                    0.025,
-                    sphere_mat,
-                    0 // mirror
-                );
-                if (intersect_sphere(ray, sphere, hit)) {
-                   (*ray).t_max = (*hit).dist;
-                }
-            }
+            // for (var index: u32 = 0; index < 100; index++) { // arrayLength(&gaussians)
+            //     let sphere: Sphere = Sphere(
+            //         gaussians[index].position,
+            //         0.025,
+            //         sphere_mat,
+            //         0 // mirror
+            //     );
+            //     // if (intersect_sphere(ray, sphere, hit)) {
+            //     //    (*ray).t_max = (*hit).dist;
+            //     // }
+            //     if (intersect_ellipsoid(ray, gaussians[index], hit)) {
+            //         (*ray).t_max = (*hit).dist;
+            //     }
+            // }
 
             return (*hit).has_hit;
         }
 
         fn shade(ray: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {            
-            return (*hit).material.color;
-            // switch (*hit).shader {
-            //     case 0 { return (*hit).material.color; }
-            //     case 1 { return lambertian(ray, hit, seed); } 
-            //     case 2 { return mirror(ray, hit); }
-            //     case 3 { return refraction(ray, hit); }
-            //     // case 3 { return fresnel(ray, hit, seed); }
-            //     // case 4 { return phong(ray, hit, light); }
-            //     // case 5 { return glossy(ray, hit, light); }
-            //     case default { return (*hit).material.color; }
-            // }
+            switch (*hit).shader {
+                // Debugging flat objects etc.
+                case 0 { return (*hit).material.color; }
+
+                // Gaussians / ellipsoids
+                case 1 {
+                    (*hit).has_hit = false;
+                    (*ray).origin = (*hit).position;
+                    (*ray).t_min = uniforms.eps;
+                    (*ray).t_max = TMAX;
+
+                    if (length((*hit).exit) == 0.0) {
+                        return vec3f();
+                    }
+                    return (*hit).material.color * calculate_alpha(hit, (*hit).gaussian);
+                } 
+                case default { return (*hit).material.color; }
+            }
         }
 
         @fragment
@@ -232,14 +443,11 @@
 
             let uv = vec2f(jittered_coords.x * uniforms.aspect_ratio * 0.5, jittered_coords.y * 0.5);
 
-            let a = vertices[0];
+            let a = gaussians[0];
             let b = spherical_harmonics[0];
 
             var ray = get_camera_ray(uv);
             var hit = HitInfo();
-            hit.current_ior = 1.0;
-            hit.emit_factor = vec3f(1,1,1);
-            hit.emit = true;
 
             var shaded_result = vec3f(0,0,0);
 
@@ -248,6 +456,9 @@
                     shaded_result += shade(&ray, &hit, &seed);
                 } else {
                     shaded_result += BACKGROUNDCOLOR.rgb;
+                    break;
+                }
+                if (hit.has_hit) {
                     break;
                 }
             }
@@ -301,6 +512,12 @@
 
     <!-------- Interface -------->
     <table>
+        <!-- FPS Counter -->
+        <tr>
+            <td colspan="2">
+                <label id="fps-label">FPS: --</label>
+            </td>
+        </tr>
         <!-- Zoom -->
         <tr>
             <td colspan="2">
