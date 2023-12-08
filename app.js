@@ -7,6 +7,7 @@ const LOG_INTERVAL = 1000;
 var doProgressiveUpdating = false;
 var totalRuntime = null;
 var currentRuntime = null;
+var fpsLabel;
 
 // Camera movement variables
 var cameraSensitivity = 10;
@@ -17,7 +18,7 @@ var lastMouseY = -1;
 // Camera positions for different scenes
 let bunny_camera = {"camera_const": 3.5, "camera_position": [-0.02, 0.11, 0.6, 0], "camera_look_point" : [-0.02, 0.11, 0.0, 0], "camera_up_vector": [0.0, 1.0, 0.0, 0]};
 let box_camera = {"camera_const": 1.0, "camera_position": [277.0, 275.0, -570.0, 0], "camera_look_point" : [277.0, 275.0, 0.0, 0], "camera_up_vector": [0.0, 1.0, 0.0, 0]};
-let teapot_camera = {"camera_const": 2.5, "camera_position": [-8, 12, -8, 0], "camera_look_point" : [0, 0, 1, 0], "camera_up_vector": [0.0, 0.0, 1.0, 0]};
+let teapot_camera = {"camera_const": 2.5, "camera_position": [0, 20, 3, 0], "camera_look_point" : [0, 0, 0, 0], "camera_up_vector": [0.0, 0.0, 1.0, 0]};
 
 var uniforms = {
     "eps" : 1e-2,
@@ -118,6 +119,12 @@ function render(device, context, textures, bindGroup, pipeline) {
 }
 
 function animate(device, context, pipeline, bindGroup, textures) {
+    if (doProgressiveUpdating) {
+        updateFPSCounter(fpsLabel);
+    } else {
+        updateFPSCounter(fpsLabel, false);
+    }
+
     // Render the scene
     // bindGroup = configureBindGroup(device, a, pipeline, textures); - no problem writing the buffer, very fast 
 
@@ -174,6 +181,8 @@ window.onload = async function () {
         format: canvasFormat
     });
 
+    fpsLabel = document.getElementById("fps-label");
+
     const pipeline = device.createRenderPipeline({
         layout: "auto",
         vertex: {
@@ -199,7 +208,7 @@ window.onload = async function () {
     uniforms["canvas_height"] = canvas.height;
     uniforms["aspect_ratio"] = canvas.width / canvas.height;
 
-    readFile("data/point_cloud.ply", function(response) {
+    readFile("data/pc_short.ply", function(response) {
         a = response;
         const [headerString, bodyBuffer] = splitHeaderAndBody(response);
         const header = parseHeader(headerString);
