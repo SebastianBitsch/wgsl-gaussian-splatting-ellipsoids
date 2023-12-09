@@ -16,9 +16,9 @@ var lastMouseX = -1;
 var lastMouseY = -1;
 
 // Camera positions for different scenes
-let bunny_camera = {"camera_const": 3.5, "camera_position": [-0.02, 0.11, 0.6, 0], "camera_look_point" : [-0.02, 0.11, 0.0, 0], "camera_up_vector": [0.0, 1.0, 0.0, 0]};
-let box_camera = {"camera_const": 1.0, "camera_position": [277.0, 275.0, -570.0, 0], "camera_look_point" : [277.0, 275.0, 0.0, 0], "camera_up_vector": [0.0, 1.0, 0.0, 0]};
-let teapot_camera = {"camera_const": 2.5, "camera_position": [0, 20, 3, 0], "camera_look_point" : [0, 0, 0, 0], "camera_up_vector": [0.0, 0.0, 1.0, 0]};
+let camera = {"camera_const": 2.5, "camera_position": [0, 20, 3, 0], "camera_look_point" : [0, 0, 0, 0], "camera_up_vector": [0.0, 0.0, 1.0, 0]};
+// let camera = {"camera_const": .5, "camera_position": [-3.222086,-0.121226,-4.121659, 0], "camera_look_point" : [-3.062380,-0.191665,-3.137010, 0], "camera_up_vector": [-0.011754, -0.997516, -0.069454, 0]};
+
 
 var uniforms = {
     "eps" : 1e-2,
@@ -39,8 +39,7 @@ var drawingInfo;
 var bindGroup;
 
 // Add camera to uniforms, swap camera depending on scene. Camera should be part of scene description i think
-uniforms = Object.assign({}, uniforms, teapot_camera);
-
+uniforms = Object.assign({}, uniforms, camera);
 
 function setupRenderTextures(device, canvas) {
     var textures = new Object();
@@ -71,6 +70,12 @@ function configureBindGroup(device, drawingInfo, pipeline, textures) {
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
     });
 
+    let vertexOrdering = argSortByDistanceTo(drawingInfo.vertexPositions, uniforms.camera_position);
+    const vertexOrderingBuffer = device.createBuffer({
+        size: vertexOrdering.byteLength,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    })
+
     const sphericalHarmonicsBuffer = device.createBuffer({
         size: drawingInfo.sphericalHarmonics.byteLength,
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
@@ -78,6 +83,7 @@ function configureBindGroup(device, drawingInfo, pipeline, textures) {
 
     device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
     device.queue.writeBuffer(verticesBuffer, 0, drawingInfo.vertices);
+    device.queue.writeBuffer(vertexOrderingBuffer, 0, vertexOrdering);
     device.queue.writeBuffer(sphericalHarmonicsBuffer, 0, drawingInfo.sphericalHarmonics);
 
     var bindGroup = device.createBindGroup({ 
@@ -86,7 +92,8 @@ function configureBindGroup(device, drawingInfo, pipeline, textures) {
             { binding: 0, resource: { buffer: uniformBuffer }},
             { binding: 1, resource: textures.renderDst.createView() },
             { binding: 2, resource: { buffer: verticesBuffer }},
-            { binding: 3, resource: { buffer: sphericalHarmonicsBuffer }}
+            { binding: 3, resource: { buffer: vertexOrderingBuffer }},
+            { binding: 4, resource: { buffer: sphericalHarmonicsBuffer }}
         ],
     });
 
@@ -208,8 +215,7 @@ window.onload = async function () {
     uniforms["canvas_height"] = canvas.height;
     uniforms["aspect_ratio"] = canvas.width / canvas.height;
 
-    readFile("data/pc_short.ply", function(response) {
-        a = response;
+    readFile("data/train.ply", function(response) {
         const [headerString, bodyBuffer] = splitHeaderAndBody(response);
         const header = parseHeader(headerString);
         const drawingInfo = parseBody(header, bodyBuffer);
