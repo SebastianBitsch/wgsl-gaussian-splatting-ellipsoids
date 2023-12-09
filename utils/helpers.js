@@ -85,15 +85,18 @@ function parseHeader(headerString) {
     // let nShCoeffs = nShCoeffsTable[sphericalHarmonicsDegree];           // 16 (1 extra for 3 x fc_dc)
     // let nShCoeffs = nCoeffsPerColor;                                // 16 (1 extra for 3 x fc_dc)
 
+    // TODO: all this could be a single for loop but..
     let shPropertyIndices = properties.flatMap((text, i) => text.includes("f_") ? i : []);
     let vertexPropertyIndices = properties.flatMap((text, i) => !text.includes("f_") ? i : []);
+    let vertexPosPropertyIndices = properties.flatMap((text, i) => text.includes("float x") || text.includes("float y") || text.includes("float z") ? i : []);
 
     return {
         nVertices           : nVertices,
         nProperties         : properties.length,
         // nShCoeffs           : nShCoeffs,
         shPropertyIndices   : shPropertyIndices,
-        vertexPropertyIndices : vertexPropertyIndices
+        vertexPropertyIndices : vertexPropertyIndices,
+        vertexPosPropertyIndices : vertexPosPropertyIndices
     }
 }
 
@@ -103,20 +106,48 @@ function parseBody(header, bodyBuffer) {
 
     // Float32Arrays to store the vertices 
     const vertices = new Float32Array(header.nVertices * pad(header.vertexPropertyIndices.length));
+    // const vertexPositions = new Float32Array(header.nVertices * pad(3)); // Used just for sorting, assume 3D.. 
+    const vertexPositions = [];//new Array(header.nVertices).fill(0).map(() => new Array(4).fill(0));
     const sphericalHarmonics = new Float32Array(header.nVertices * pad(header.shPropertyIndices.length)); // shouldnt be need to pad, but just in case
-    
+
     // Parse the vertices, split on whether they are are vertex data or sh data
     for (let i = 0; i < header.nVertices; i++) {
         let vertexSlice = new Float32Array(bodyBuffer, i * vertexSize, header.nProperties);
         
+        // TODO: Should be a single for loop for extra speed
         vertices.set(header.vertexPropertyIndices.map(e => vertexSlice[e]), i * pad(header.vertexPropertyIndices.length));
+        // vertexPositions.set(header.vertexPosPropertyIndices.map(e => vertexSlice[e]), i * pad(header.vertexPosPropertyIndices.length));
+
+        // not very elegant
+        // let xyz = header.vertexPosPropertyIndices.map(e => vertexSlice[e]);
+        vertexPositions.push(header.vertexPosPropertyIndices.map(e => vertexSlice[e]));
         sphericalHarmonics.set(header.shPropertyIndices.map(e => vertexSlice[e]), i * pad(header.shPropertyIndices.length));
     }
 
     return {
         vertices : vertices,
+        vertexPositions: vertexPositions,
         sphericalHarmonics : sphericalHarmonics
     };
+}
+
+function sortByDistanceTo(vertexPositions, refPoint) {
+    // Sort vertices by distance to some point (camera) - speed not great
+    refPoint = refPoint.slice(0,3); // can be a vec4 - the camera is
+    return vertexPositions.sort(function(a, b) {
+        if (a === b) { return 0; }
+        return length(subtract(a, refPoint)) < length(subtract(b, refPoint)) ? -1 : 1;
+    });
+}
+
+function argSortByDistanceTo(vertexPositions, refPoint) {
+    // Return the indices in order of closest to refpoint (camera)
+    refPoint = refPoint.slice(0,3); // can be a vec4 - the camera is
+    return new Uint32Array( 
+        Array.from(vertexPositions.keys()).sort(
+            (a,b) => length(subtract(vertexPositions[a], refPoint)) < length(subtract(vertexPositions[b], refPoint)) ? -1 : 1
+        )
+    );
 }
 
 
