@@ -214,6 +214,8 @@ window.onload = async function () {
     uniforms["canvas_width"] = canvas.width;
     uniforms["canvas_height"] = canvas.height;
     uniforms["aspect_ratio"] = canvas.width / canvas.height;
+    document.getElementById("zoom-slider").value = uniforms.camera_const;
+    document.getElementById("zoom-label").innerHTML = "Zoom: " + uniforms.camera_const;
 
     readFile("data/train.ply", function(response) {
         const [headerString, bodyBuffer] = splitHeaderAndBody(response);
