@@ -75,7 +75,6 @@ function parseHeader(headerString) {
     let nVertices = parseInt(headerArray.find(e => e.includes("element vertex")).split(" ")[2]); // TODO: not the most elegant solution
 
     let properties = headerArray.filter(e => e.includes("property"));
-
     // NB: f_dc_ are not included in count or degree calculation - but is used when getting the coefficients
     // let nCoeffsPerColor = headerString.Count("f_rest_") / 3;            // 15
     // let nCoeffsPerColor = headerString.Count("f_") / 3;            // 16
@@ -93,11 +92,16 @@ function parseHeader(headerString) {
     return {
         nVertices           : nVertices,
         nProperties         : properties.length,
+        propertyNames       : properties, // TODO: could do everything with this tbh
         // nShCoeffs           : nShCoeffs,
         shPropertyIndices   : shPropertyIndices,
         vertexPropertyIndices : vertexPropertyIndices,
         vertexPosPropertyIndices : vertexPosPropertyIndices
     }
+}
+
+function Sigmoid(z) {
+    return 1 / (1 + Math.exp(-z));
 }
 
 function parseBody(header, bodyBuffer) {
@@ -113,13 +117,29 @@ function parseBody(header, bodyBuffer) {
     // Parse the vertices, split on whether they are are vertex data or sh data
     for (let i = 0; i < header.nVertices; i++) {
         let vertexSlice = new Float32Array(bodyBuffer, i * vertexSize, header.nProperties);
-        
-        // TODO: Should be a single for loop for extra speed
-        vertices.set(header.vertexPropertyIndices.map(e => vertexSlice[e]), i * pad(header.vertexPropertyIndices.length));
-        // vertexPositions.set(header.vertexPosPropertyIndices.map(e => vertexSlice[e]), i * pad(header.vertexPosPropertyIndices.length));
 
-        // not very elegant
-        // let xyz = header.vertexPosPropertyIndices.map(e => vertexSlice[e]);
+        // TODO: Should be a single for loop for extra speed
+        for (let j = 0; j < header.nProperties; j++) {
+
+            // x,y,z,nx,ny,nz,opacity,scale,rot
+            if (header.vertexPropertyIndices.includes(j)) {
+                if (header.propertyNames[j].includes('scale')) {
+                    vertexSlice[j] = Math.exp(vertexSlice[j]);
+                }
+                if (header.propertyNames[j].includes('opacity')) {
+                    vertexSlice[j] = Sigmoid(vertexSlice[j]);
+                }
+            }
+            // x,y,z
+            // if (header.vertexPosPropertyIndices.includes(j)) {
+
+            // }
+            // // f_dc, f_rest
+            // if (header.shPropertyIndices.includes(j)) {
+
+            // }
+        }
+        vertices.set(header.vertexPropertyIndices.map(e => vertexSlice[e]), i * pad(header.vertexPropertyIndices.length));
         vertexPositions.push(header.vertexPosPropertyIndices.map(e => vertexSlice[e]));
         sphericalHarmonics.set(header.shPropertyIndices.map(e => vertexSlice[e]), i * pad(header.shPropertyIndices.length));
     }
@@ -166,22 +186,6 @@ function readFile(fileName, callback) {
     }
     request.send();
 }
-
-function readSingleFile(e) {
-    // https://stackoverflow.com/a/26298948
-    var file = e.target.files[0];
-    console.log(file);
-    if (!file) {
-        return;
-    }
-    var reader = new FileReader();
-    reader.onload = function(e) {
-        var contents = e.target.result;
-        displayContents(contents);
-    };
-    reader.readAsText(file);
-}
-
 
 
 function formatTime(milliseconds) {
