@@ -104,6 +104,57 @@ function Sigmoid(z) {
     return 1 / (1 + Math.exp(-z));
 }
 
+function DiagonalMatrix3d(v) {
+    return mat3([
+        v[0], 0,    0,
+        0,    v[1], 0,
+        0,    0,    v[2]
+    ]);
+}
+
+function Quaternion2RotMatrix(q) {
+    // See: "Quaternion-derived rotation matrix" https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation 
+    let xx = q[0] * q[0];
+    let yy = q[1] * q[1];
+    let zz = q[2] * q[2];
+    let xy = q[0] * q[1];
+    let xz = q[0] * q[2];
+    let yz = q[1] * q[2];
+    let wx = q[3] * q[0];
+    let wy = q[3] * q[1];
+    let wz = q[3] * q[2];
+
+    return mat3([
+        1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy),
+        2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx),
+        2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy)
+    ]);
+}
+
+function CovarianceMatrix3d(scaleVector, rotationVector) {
+    let S = DiagonalMatrix3d(scaleVector); // 3x3 diagonal matrix
+    let R = Quaternion2RotMatrix(rotationVector);
+
+    return mult(mult(mult(R, S), transpose(S)), transpose(R));
+}
+
+function InvCovarianceMatrix3d(scaleVector, rotationVector) {
+    return inverse(CovarianceMatrix3d(scaleVector, rotationVector));
+}
+
+function AddFourthDimension(array) {
+    // Function to go from [1,2,3,4,5,6,7,8,9] -> [1,2,3,0,4,5,6,0,7,8,9,0]
+    var out = new Float32Array(pad(array.length + 1));
+    var offset = 0;
+    for (let i = 0; i < array.length; i++) {
+        if (i % 3 == 0 && 0 < i) {
+            offset += 1;
+        }
+        out[i + offset] = array[i];
+    }
+    return out;    
+}
+
 function parseBody(header, bodyBuffer) {
     // NB TODO: I think there can also be uint8's - not just floats so maybe have to change this everything will break if not floats
     const vertexSize = header.nProperties * BYTES_PER_PROPERTY;
@@ -113,41 +164,53 @@ function parseBody(header, bodyBuffer) {
     // const vertexPositions = new Float32Array(header.nVertices * pad(3)); // Used just for sorting, assume 3D.. 
     const vertexPositions = [];//new Array(header.nVertices).fill(0).map(() => new Array(4).fill(0));
     const sphericalHarmonics = new Float32Array(header.nVertices * pad(header.shPropertyIndices.length)); // shouldnt be need to pad, but just in case
+    const invCovMatrices = new Float32Array(header.nVertices * pad(9)); // Cotains 3x3 matrices 
 
     // Parse the vertices, split on whether they are are vertex data or sh data
     for (let i = 0; i < header.nVertices; i++) {
         let vertexSlice = new Float32Array(bodyBuffer, i * vertexSize, header.nProperties);
-
+        var rotation = [0,0,0,1];
+        var scale = [];
+        
         // TODO: Should be a single for loop for extra speed
         for (let j = 0; j < header.nProperties; j++) {
 
             // x,y,z,nx,ny,nz,opacity,scale,rot
             if (header.vertexPropertyIndices.includes(j)) {
-                if (header.propertyNames[j].includes('scale')) {
+                if (header.propertyNames[j].includes('scale_')) {
                     vertexSlice[j] = Math.exp(vertexSlice[j]);
+                    if (i == 1) {
+                        console.log(vertexSlice[j]);
+                    }
+                    scale.push(vertexSlice[j]);
                 }
                 if (header.propertyNames[j].includes('opacity')) {
-                    vertexSlice[j] = Sigmoid(vertexSlice[j]);
+                    vertexSlice[j] = 1.0;//Sigmoid(vertexSlice[j]);
+                }
+                if (header.propertyNames[j].includes('rot_')) {
+                    // rotation.push(0);
+                    // rotation.push(vertexSlice[j]);
                 }
             }
-            // x,y,z
-            // if (header.vertexPosPropertyIndices.includes(j)) {
-
-            // }
-            // // f_dc, f_rest
-            // if (header.shPropertyIndices.includes(j)) {
-
-            // }
         }
+
+        if (i == 1) {
+            console.log(rotation);
+            console.log(scale);
+            console.log(InvCovarianceMatrix3d(scale, rotation));
+        }
+        
         vertices.set(header.vertexPropertyIndices.map(e => vertexSlice[e]), i * pad(header.vertexPropertyIndices.length));
         vertexPositions.push(header.vertexPosPropertyIndices.map(e => vertexSlice[e]));
         sphericalHarmonics.set(header.shPropertyIndices.map(e => vertexSlice[e]), i * pad(header.shPropertyIndices.length));
+        invCovMatrices.set(AddFourthDimension(flatten(InvCovarianceMatrix3d(scale, rotation))), i * pad(9));
     }
 
     return {
         vertices : vertices,
         vertexPositions: vertexPositions,
-        sphericalHarmonics : sphericalHarmonics
+        sphericalHarmonics : sphericalHarmonics,
+        invCovMatrices : invCovMatrices
     };
 }
 
