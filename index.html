@@ -15,7 +15,7 @@
         const INFINITY: f32 = 1.0e+38;
         
         const TMIN: f32 = 0.0;
-        const TMAX: f32 = 10000000.0;
+        const TMAX: f32 = 1000.0;
         const MAXINTERSECTIONS: u32 = 10;
         const BACKGROUNDCOLOR: vec4f = vec4f(0.1, 0.3, 0.6, 1.0);
 
@@ -29,7 +29,8 @@
 
         @group(0) @binding(2) var<storage, read> gaussians: array<Gaussian>;
         @group(0) @binding(3) var<storage, read> gaussian_ordering: array<u32>;
-        @group(0) @binding(4) var<storage, read> spherical_harmonics: array<SphericalHarmonics>;
+        // @group(0) @binding(4) var<storage, read> spherical_harmonics: array<SphericalHarmonics>;
+        @group(0) @binding(4) var<storage, read> spherical_harmonics: array<array<vec3<f32>, 16>>;
         @group(0) @binding(5) var<storage, read> inv_covariance_matrices: array<mat3x3<f32>>;
 
         struct Uniforms {
@@ -55,9 +56,9 @@
             // material: Material // TODO: THIS is temporary for debugging
         };
 
-        struct SphericalHarmonics {
-            coeffs: array<vec3<f32>, 16>
-        };
+        // struct SphericalHarmonics {
+        //     coeffs: array<vec3<f32>, 16>
+        // };
 
         struct VSOut {
             @builtin(position) position: vec4f,
@@ -375,7 +376,7 @@
         // }
 
 
-        fn intersect_ellipsoid(ray: ptr<function, Ray>, gaussian: Gaussian, inv_cov_mat:mat3x3<f32>, hit: ptr<function, HitInfo>, material: Material) -> bool {
+        fn intersect_ellipsoid(ray: ptr<function, Ray>, gaussian: Gaussian, inv_cov_mat:mat3x3<f32>, spherical_harmonics: array<vec3<f32>, 16>, hit: ptr<function, HitInfo>, material: Material) -> bool {
             let transformedRayOrigin = inv_cov_mat * ((*ray).origin - gaussian.position);
             let transformedRayDirection = inv_cov_mat * (*ray).direction;
 
@@ -418,6 +419,7 @@
                 (*hit).position = hit_pos;
 
                 (*hit).material = material; // TODO this is temporary, use spherical harmonics at some point
+                (*hit).material.color = compute_color_from_sh(hit_pos, spherical_harmonics);
                 (*hit).normal = normal_at_hit;
                 (*hit).entry = hit_pos;
                 (*hit).exit = calculate_exit_point(inv_cov_mat, *ray, *hit);
@@ -456,6 +458,67 @@
             return accumulatedAlpha + newAlpha * (1.0 - accumulatedAlpha);
         }
 
+        const SH_C0 = 0.28209479177387814;
+        const SH_C1 = 0.4886025119029199;
+        const SH_C2 = array(
+            1.0925484305920792,
+            -1.0925484305920792,
+            0.31539156525252005,
+            -1.0925484305920792,
+            0.5462742152960396
+        );
+        const SH_C3 = array(
+            -0.5900435899266435f,
+            2.890611442640554f,
+            -0.4570457994644658f,
+            0.3731763325901154f,
+            -0.4570457994644658f,
+            1.445305721320277f,
+            -0.5900435899266435f
+        );
+
+        fn compute_color_from_sh(position: vec3<f32>, sh: array<vec3<f32>, 16>) -> vec3<f32> {
+            let dir = normalize(position - uniforms.camera_position);
+            var result = SH_C0 * sh[0];
+
+            // if deg > 0
+            let x = dir.x;
+            let y = dir.y;
+            let z = dir.z;
+
+            result = result + SH_C1 * (-y * sh[1] + z * sh[2] - x * sh[3]);
+
+            let xx = x * x;
+            let yy = y * y;
+            let zz = z * z;
+            let xy = x * y;
+            let xz = x * z;
+            let yz = y * z;
+
+            // if (sh_degree > 1) {
+            result = result +
+                SH_C2[0] * xy * sh[4] +
+                SH_C2[1] * yz * sh[5] +
+                SH_C2[2] * (2. * zz - xx - yy) * sh[6] +
+                SH_C2[3] * xz * sh[7] +
+                SH_C2[4] * (xx - yy) * sh[8];
+            
+            // if (sh_degree > 2) {
+            result = result +
+                SH_C3[0] * y * (3. * xx - yy) * sh[9] +
+                SH_C3[1] * xy * z * sh[10] +
+                SH_C3[2] * y * (4. * zz - xx - yy) * sh[11] +
+                SH_C3[3] * z * (2. * zz - 3. * xx - 3. * yy) * sh[12] +
+                SH_C3[4] * x * (4. * zz - xx - yy) * sh[13] +
+                SH_C3[5] * z * (xx - yy) * sh[14] +
+                SH_C3[6] * x * (xx - 3. * yy) * sh[15];
+
+            // unconditional
+            result = result + 0.5;
+
+            return max(result, vec3<f32>(0.));
+        }
+
         fn intersect_scene(ray: ptr<function, Ray>) -> vec3f {
             var shaded_result = vec3f();//BACKGROUNDCOLOR.rgb; //vec3f();
             let default_material: Material = Material();
@@ -485,9 +548,9 @@
             var g = array<Gaussian, 2>(gauss1,gauss2);
             var inv = array<mat3x3<f32>, 2>(
                 mat3x3<f32>(
-                    100, 0, 0,
-                    0, 1, 0,
-                    0, 0, 1
+                    30, 0, 0,
+                    0, 30, 0,
+                    0, 0, 30
                 ),
                 mat3x3<f32>(
                     1, 0, 0,
@@ -500,29 +563,29 @@
             var n_intersections: i32 = 0;
             
             // Testing of hard coded ellipsoids / spheres
-            for (var i: u32 = 0; i < 2; i++) {
-                var hit = HitInfo();
-                if (intersect_ellipsoid(ray, g[i], inv[i], &hit, m[i])) {
-                    intersections[n_intersections] = hit;
-                    n_intersections += 1;
-                }
-            }
-            
-            // Check for hit against all ellipsoids - for now there are only N for testing
-            // for (var i: u32 = 0; i < 10; i++) {
+            // for (var i: u32 = 0; i < 2; i++) {
             //     var hit = HitInfo();
-            //     if (intersect_ellipsoid(ray, gaussians[i], inv_covariance_matrices[i], &hit, m[i%2])) {
+            //     if (intersect_ellipsoid(ray, g[i], inv[i], &hit, m[i])) {
             //         intersections[n_intersections] = hit;
             //         n_intersections += 1;
             //     }
             // }
+            
+            // Check for hit against all ellipsoids - for now there are only N for testing
+            for (var i: u32 = 0; i < 10000; i++) {
+                var hit = HitInfo();
+                if (intersect_ellipsoid(ray, gaussians[i], inv[0], spherical_harmonics[i], &hit, m[i%2])) {
+                    intersections[n_intersections] = hit;
+                    n_intersections += 1;
+                }
+            }
 
             // Model as spheres for testing
-            // for (var i: u32 = 0; i < 10; i++) {
+            // for (var i: u32 = 0; i < 10000; i++) {
             //     var hit = HitInfo();
             //     let sphere: Sphere = Sphere(
             //         gaussians[i].position,
-            //         gaussians[i].scale.x,
+            //         .05,//gaussians[i].scale.x,
             //         gauss1_mat,
             //         0 // shader
             //     );
@@ -535,8 +598,9 @@
             // TODO: Real alpha blending
             // Iterate over the hits
             for (var i: i32 = n_intersections - 1; 0 <= i; i--) {
-                shaded_result += intersections[i].material.color * calculate_alpha(intersections[i]);
+                // shaded_result += intersections[i].material.color * calculate_alpha(intersections[i]);
                 // shaded_result += intersections[i].normal;
+                shaded_result += intersections[i].material.color * calculate_alpha(intersections[i]);
             }
 
             return shaded_result;

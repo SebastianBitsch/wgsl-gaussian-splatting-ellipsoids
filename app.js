@@ -16,8 +16,8 @@ var lastMouseX = -1;
 var lastMouseY = -1;
 
 // Camera positions for different scenes
-let camera = {"camera_const": 2.5, "camera_position": [0, 20, 3, 0], "camera_look_point" : [0, 0, 0, 0], "camera_up_vector": [0.0, 0.0, 1.0, 0]};
-// let camera = {"camera_const": .5, "camera_position": [-3.222086,-0.121226,-4.121659, 0], "camera_look_point" : [-3.062380,-0.191665,-3.137010, 0], "camera_up_vector": [-0.011754, -0.997516, -0.069454, 0]};
+// let camera = {"camera_const": 2.5, "camera_position": [2, 20, 3, 0], "camera_look_point" : [0, 0, 0, 0], "camera_up_vector": [0.0, 0.0, 1.0, 0]};
+let camera = {"camera_const": .5, "camera_position": [-3.222086,-0.121226,-4.121659, 0], "camera_look_point" : [-3.062380,-0.191665,-3.137010, 0], "camera_up_vector": [-0.011754, -0.997516, -0.069454, 0]};
 
 
 var uniforms = {
