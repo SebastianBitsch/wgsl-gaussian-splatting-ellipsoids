@@ -81,10 +81,16 @@ function configureBindGroup(device, drawingInfo, pipeline, textures) {
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
     });
 
+    const invCovMatricesBuffer = device.createBuffer({
+        size: drawingInfo.invCovMatrices.byteLength,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    })
+
     device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
     device.queue.writeBuffer(verticesBuffer, 0, drawingInfo.vertices);
     device.queue.writeBuffer(vertexOrderingBuffer, 0, vertexOrdering);
     device.queue.writeBuffer(sphericalHarmonicsBuffer, 0, drawingInfo.sphericalHarmonics);
+    device.queue.writeBuffer(invCovMatricesBuffer, 0, drawingInfo.invCovMatrices);
 
     var bindGroup = device.createBindGroup({ 
         layout: pipeline.getBindGroupLayout(0), 
@@ -93,7 +99,8 @@ function configureBindGroup(device, drawingInfo, pipeline, textures) {
             { binding: 1, resource: textures.renderDst.createView() },
             { binding: 2, resource: { buffer: verticesBuffer }},
             { binding: 3, resource: { buffer: vertexOrderingBuffer }},
-            { binding: 4, resource: { buffer: sphericalHarmonicsBuffer }}
+            { binding: 4, resource: { buffer: sphericalHarmonicsBuffer }},
+            { binding: 5, resource: { buffer: invCovMatricesBuffer }}
         ],
     });
 
