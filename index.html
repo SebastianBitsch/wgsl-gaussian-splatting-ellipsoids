@@ -367,42 +367,42 @@
             // }
             
             // Check for hit against all ellipsoids - for now there are only N for testing
-            // for (var i: u32 = 0; i < 50000; i++) {
-            //     if (MAXINTERSECTIONS - 1 <= n_intersections) {
-            //         continue;
-            //     }
-            //     var hit = HitInfo();
-            //     if (intersect_ellipsoid(ray, gaussians[i], spherical_harmonics[i], &hit, m[i%2])) {
-            //         // if (2 < length(hit.entry - uniforms.camera_position)) {
-            //             intersections[n_intersections] = hit;
-            //             n_intersections += 1;
-            //         // }
-            //     }
-            // }
-
-            // Model as spheres for testing
-            for (var i: u32 = 0; i < 10000; i++) {
+            for (var i: u32 = 0; i < 50000; i++) {
+                if (MAXINTERSECTIONS - 1 <= n_intersections) {
+                    continue;
+                }
                 var hit = HitInfo();
-                let sphere: Sphere = Sphere(
-                    gaussians[i].position,
-                    0.05,
-                    m[i%2],
-                    0 // shader
-                );
-                if (intersect_sphere(ray, sphere, spherical_harmonics[i], &hit)) {
-                    intersections[n_intersections] = hit;
-                    n_intersections += 1;
+                if (intersect_ellipsoid(ray, gaussians[i], spherical_harmonics[i], &hit, m[i%2])) {
+                    // if (2 < length(hit.entry - uniforms.camera_position)) {
+                        intersections[n_intersections] = hit;
+                        n_intersections += 1;
+                    // }
                 }
             }
+
+            // Model as spheres for testing
+            // for (var i: u32 = 0; i < 50000; i++) {
+            //     var hit = HitInfo();
+            //     let sphere: Sphere = Sphere(
+            //         gaussians[i].position,
+            //         0.025,
+            //         m[i%2],
+            //         0 // shader
+            //     );
+            //     if (intersect_sphere(ray, sphere, spherical_harmonics[i], &hit)) {
+            //         intersections[n_intersections] = hit;
+            //         n_intersections += 1;
+            //     }
+            // }
             
             // TODO: Real alpha blending
             // Iterate over the hits
-            // for (var i: i32 = n_intersections - 1; 0 <= i; i--) {
-            //     shaded_result += intersections[i].material.color;
-            //     // shaded_result += intersections[i].normal;
-            //     // shaded_result += intersections[i].material.color * calculate_alpha(intersections[i]);
-            // }
-            shaded_result = intersections[n_intersections - 1].material.color;
+            for (var i: i32 = n_intersections - 1; 0 <= i; i--) {
+                // shaded_result += intersections[i].material.color;
+                // shaded_result += intersections[i].normal;
+                shaded_result += intersections[i].material.color * calculate_alpha(intersections[i]);
+            }
+            // shaded_result = intersections[n_intersections - 1].material.color;
             // shaded_result = intersections[0].gaussian.normal.rgb;
 
             return shaded_result;
