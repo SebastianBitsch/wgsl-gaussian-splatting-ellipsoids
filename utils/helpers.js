@@ -169,39 +169,52 @@ function parseBody(header, bodyBuffer) {
     // Parse the vertices, split on whether they are are vertex data or sh data
     for (let i = 0; i < header.nVertices; i++) {
         let vertexSlice = new Float32Array(bodyBuffer, i * vertexSize, header.nProperties);
-        var rotation = [0,0,0,1];
+        var rotation = [];
         var scale = [];
+        var position = [];
+        var normal = [];
+        var opacity = 1.0;
         
         // TODO: Should be a single for loop for extra speed
         for (let j = 0; j < header.nProperties; j++) {
 
             // x,y,z,nx,ny,nz,opacity,scale,rot
             if (header.vertexPropertyIndices.includes(j)) {
+                if (header.propertyNames[j].includes("float x") || header.propertyNames[j].includes("float y") || header.propertyNames[j].includes("float z")) {
+                    position.push(vertexSlice[j]);
+                }
                 if (header.propertyNames[j].includes('scale_')) {
                     vertexSlice[j] = Math.exp(vertexSlice[j]);
-                    if (i == 1) {
-                        console.log(vertexSlice[j]);
-                    }
                     scale.push(vertexSlice[j]);
                 }
                 if (header.propertyNames[j].includes('opacity')) {
-                    vertexSlice[j] = 1.0;//Sigmoid(vertexSlice[j]);
+                    opacity = Sigmoid(vertexSlice[j]);
                 }
                 if (header.propertyNames[j].includes('rot_')) {
-                    // rotation.push(0);
-                    // rotation.push(vertexSlice[j]);
+                    rotation.push(vertexSlice[j]);
+                }
+                if (header.propertyNames[j].includes("float nx") || header.propertyNames[j].includes("float ny") || header.propertyNames[j].includes("float nz")) {
+                    normal.push(vertexSlice[j]);
                 }
             }
         }
+        // Add padding
+        position.push(0);
+        scale.push(0);
+        normal.push(opacity);
 
-        if (i == 1) {
+        if (i == 0) {
+            console.log(position)
             console.log(rotation);
             console.log(scale);
             console.log(InvCovarianceMatrix3d(scale, rotation));
         }
         
-        vertices.set(header.vertexPropertyIndices.map(e => vertexSlice[e]), i * pad(header.vertexPropertyIndices.length));
-        vertexPositions.push(header.vertexPosPropertyIndices.map(e => vertexSlice[e]));
+        vertices.set(position,      i * 16);
+        vertices.set(scale,     4 + i * 16);
+        vertices.set(rotation,  8 + i * 16);
+        vertices.set(normal,   12 + i * 16);
+        vertexPositions.push(position.slice(0,3));
         sphericalHarmonics.set(header.shPropertyIndices.map(e => vertexSlice[e]), i * pad(header.shPropertyIndices.length));
         invCovMatrices.set(AddFourthDimension(flatten(InvCovarianceMatrix3d(scale, rotation))), i * pad(9));
     }
