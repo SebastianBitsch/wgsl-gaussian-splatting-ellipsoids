@@ -73,6 +73,8 @@ function parseHeader(headerString) {
     let headerArray = headerString.split("\n");
 
     let nVertices = parseInt(headerArray.find(e => e.includes("element vertex")).split(" ")[2]); // TODO: not the most elegant solution
+    //console.log(nVertices);
+    nVertices = 100000; // TODO: temporary to avoid hitting max buffer size and making loading faster 
 
     let properties = headerArray.filter(e => e.includes("property"));
     // NB: f_dc_ are not included in count or degree calculation - but is used when getting the coefficients
@@ -83,12 +85,12 @@ function parseHeader(headerString) {
     // let nShCoeffsTable = {0 : 1, 1: 4, 2: 9, 3: 16};                    // Pretty sure this isnt neccessary, just use nCoeffsPerColor + 1
     // let nShCoeffs = nShCoeffsTable[sphericalHarmonicsDegree];           // 16 (1 extra for 3 x fc_dc)
     // let nShCoeffs = nCoeffsPerColor;                                // 16 (1 extra for 3 x fc_dc)
-
+    
     // TODO: all this could be a single for loop but..
     let shPropertyIndices = properties.flatMap((text, i) => text.includes("f_") ? i : []);
     let vertexPropertyIndices = properties.flatMap((text, i) => !text.includes("f_") ? i : []);
     let vertexPosPropertyIndices = properties.flatMap((text, i) => text.includes("float x") || text.includes("float y") || text.includes("float z") ? i : []);
-
+    
     return {
         nVertices           : nVertices,
         nProperties         : properties.length,
@@ -161,9 +163,8 @@ function parseBody(header, bodyBuffer) {
 
     // Float32Arrays to store the vertices 
     const vertices = new Float32Array(header.nVertices * pad(header.vertexPropertyIndices.length));
-    // const vertexPositions = new Float32Array(header.nVertices * pad(3)); // Used just for sorting, assume 3D.. 
-    const vertexPositions = [];//new Array(header.nVertices).fill(0).map(() => new Array(4).fill(0));
-    const sphericalHarmonics = new Float32Array(header.nVertices * pad(header.shPropertyIndices.length)); // shouldnt be need to pad, but just in case
+    const vertexPositions = [];
+    const sphericalHarmonics = new Float32Array(header.nVertices * 64); 
     const invCovMatrices = new Float32Array(header.nVertices * pad(9)); // Cotains 3x3 matrices 
 
     // Parse the vertices, split on whether they are are vertex data or sh data
@@ -215,8 +216,26 @@ function parseBody(header, bodyBuffer) {
         vertices.set(rotation,  8 + i * 16);
         vertices.set(normal,   12 + i * 16);
         vertexPositions.push(position.slice(0,3));
-        sphericalHarmonics.set(header.shPropertyIndices.map(e => vertexSlice[e]), i * pad(header.shPropertyIndices.length));
         invCovMatrices.set(AddFourthDimension(flatten(InvCovarianceMatrix3d(scale, rotation))), i * pad(9));
+
+        // TODO: This not exactly nice, and should be cleaned up
+        // Set the first set of spherical harmonics
+        sphericalHarmonics.set(
+            AddFourthDimension([
+                vertexSlice[header.shPropertyIndices[0]],
+                vertexSlice[header.shPropertyIndices[1]],
+                vertexSlice[header.shPropertyIndices[2]],
+            ]), i * 64
+        );
+        for (let k = 0; k < 15; ++k) {
+            let sh = [0,0,0];
+            for (let rgb = 0; rgb < 3; ++rgb) {
+                sh[rgb] = vertexSlice[header.shPropertyIndices[rgb * 15 + k + 3]];
+            }
+            sphericalHarmonics.set(
+                AddFourthDimension(sh), 4 + (k*4) + (i * 64)
+            );
+        }
     }
 
     return {
@@ -225,6 +244,16 @@ function parseBody(header, bodyBuffer) {
         sphericalHarmonics : sphericalHarmonics,
         invCovMatrices : invCovMatrices
     };
+}
+
+function rearrangeArray(floatArray, indexArray) {
+    let rearrangedArray = new Float32Array(floatArray.length);
+
+    for (let i = 0; i < indexArray.length; i++) {
+        rearrangedArray[i] = floatArray[indexArray[i]];
+    }
+
+    return rearrangedArray;
 }
 
 function sortByDistanceTo(vertexPositions, refPoint) {
