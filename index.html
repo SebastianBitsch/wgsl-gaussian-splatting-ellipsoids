@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- <script type="text/javascript" src="PlyReader.js"></script> -->
     <script type="text/javascript" src="utils/MV.js"></script>
+    <script type="text/javascript" src="utils/BspTree.js"></script>
+    <script type="text/javascript" src="utils/Aabb.js"></script>
     <script type="text/javascript" src="utils/helpers.js"></script>
     <script type="text/javascript" src="app.js"></script>
     
@@ -367,6 +369,7 @@
             // }
             
             // Check for hit against all ellipsoids - for now there are only N for testing
+            // Higher than 50000 fails, can hopefully be solved with a BVH
             for (var i: u32 = 0; i < 50000; i++) {
                 if (MAXINTERSECTIONS - 1 <= n_intersections) {
                     continue;
