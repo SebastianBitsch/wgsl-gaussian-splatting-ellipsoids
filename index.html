@@ -16,7 +16,7 @@
         
         const TMIN: f32 = 0.0;
         const TMAX: f32 = 1000.0;
-        const MAXINTERSECTIONS: u32 = 10;
+        const MAXINTERSECTIONS: i32 = 50;
         const BACKGROUNDCOLOR: vec4f = vec4f(0.1, 0.3, 0.6, 1.0);
 
         const MAX_LEVEL: u32 = 20;
@@ -49,11 +49,9 @@
 
         struct Gaussian {
             position: vec3f,
-            normal: vec3f,
-            opacity: f32,
             scale: vec3f,
             rotation: vec4f,
-            // material: Material // TODO: THIS is temporary for debugging
+            normal: vec4f,
         };
 
         // struct SphericalHarmonics {
@@ -207,50 +205,6 @@
             return rotation_matrix * v;
         }
 
-        // Function to calculate normal for a rotated ellipsoid
-        // fn calculate_rotated_normal(hit_pos: vec3<f32>, gaussian: Gaussian) -> vec3<f32> {
-        //     // Calculate the rotation matrix from the quaternion
-        //     let rotation_matrix = quaternion_to_matrix(gaussian.rotation);
-            
-        //     // Inverse rotation is the transpose of the rotation matrix
-        //     let inverse_rotation_matrix = transpose(rotation_matrix);
-            
-        //     // Transform the hit position into the local space of the ellipsoid
-        //     let local_hit_pos = rotate_vector(hit_pos - gaussian.position, inverse_rotation_matrix);
-            
-        //     // Calculate the normal in local space
-        //     let local_normal = normalize(vec3(
-        //         local_hit_pos.x / (gaussian.scale.x * gaussian.scale.x),
-        //         local_hit_pos.y / (gaussian.scale.y * gaussian.scale.y),
-        //         local_hit_pos.z / (gaussian.scale.z * gaussian.scale.z)
-        //     ));
-            
-        //     // Rotate the normal back to world space
-        //     let world_normal = rotate_vector(local_normal, rotation_matrix);
-            
-        //     return world_normal;
-        // }
-        fn calculate_rotated_normal(hit_pos: vec3<f32>, inv_cov_mat: mat3x3<f32>, gaussian: Gaussian) -> vec3<f32> {
-            // Step 1: Transform the hit position to the local space of the ellipsoid
-            let localHitPos = inv_cov_mat * (hit_pos - gaussian.position);
-
-            // Step 2: Calculate the normal in local space
-            let localNormal = normalize(localHitPos);
-
-            // Step 3: Account for non-uniform scaling
-            // For non-uniform scaling, the normal needs to be adjusted by the inverse of the scale factors
-            let adjustedNormal = vec3<f32>(
-                localNormal.x / gaussian.scale.x,
-                localNormal.y / gaussian.scale.y,
-                localNormal.z / gaussian.scale.z
-            );
-
-            // Rotate the normal back to world space using the quaternion
-            let worldNormal = rotate_vector(adjustedNormal, quaternion_to_matrix(gaussian.rotation));
-
-            return normalize(worldNormal);
-        }
-
 
         fn density_at_point(hit: HitInfo, inv_cov_mat: mat3x3<f32>) -> f32 {
             // Transform the point into the Gaussian's local space
@@ -273,18 +227,6 @@
             return totalAlpha;
         }
 
-        // fn calculate_alpha(hit: HitInfo) -> f32 {
-        //     let midPoint: vec3f = (hit.entry + hit.exit) * 0.5;
-        //     let distanceFromCenter: f32 = length(midPoint - hit.gaussian.position);
-        //     let sigma: f32 = length(hit.gaussian.scale) / 2.0;  // Assuming uniform scale for simplicity
-        //     let alphaAtMidPoint: f32 = exp(-distanceFromCenter * distanceFromCenter / (2.0 * sigma * sigma));
-            
-        //     // let pathLength: f32 = length(hit.exit - hit.entry);
-        //     // let totalAlpha: f32 = alphaAtMidPoint * pathLength;  // Approximate total alpha
-        //     let totalAlpha: f32 = alphaAtMidPoint * hit.gaussian.opacity;
-        //     return totalAlpha;
-        // } 
-
 
         fn calculate_exit_point(inv_cov_mat:mat3x3<f32>, ray: Ray, hit: HitInfo) -> vec3<f32> {
             // Transform the ray into the local space defined by the inverse covariance matrix
@@ -305,153 +247,54 @@
             let t0 = (-b - sqrt(discriminant)) / (2.0 * a);
             let t1 = (-b + sqrt(discriminant)) / (2.0 * a);
 
-            // We only want the second intersection, assuming the ray originated outside the sphere
             let t_exit = max(t0, t1);
 
-            // Calculate the exit point in the local space
             let exitPointLocal = localRayOrigin + t_exit * localRayDirection;
-
-            // To transform the local exit point back to world space, we need to perform the inverse of the 
-            // transformations that the inverse covariance matrix applied. This involves scaling and then rotating.
-            // Since the inverse covariance matrix combined these, we must apply the inverse scaling first and then the inverse rotation.
-
-            // Inverse scale the local exit point
             let scaledExitPoint = exitPointLocal * hit.gaussian.scale;
-
-            // Now we need to rotate this point back to world space. The quaternion must be normalized.
-            // Perform the rotation using the quaternion. This will require quaternion-to-matrix conversion
-            // or a quaternion rotation function, which you should define based on your environment's capabilities.
-
-            // Assuming you have a function to rotate a point by a quaternion:
             let worldExitPoint = rotate_vector(scaledExitPoint, quaternion_to_matrix(hit.gaussian.rotation));
 
             // Translate the point by the Gaussian's position to move it back to world space
             return worldExitPoint + hit.gaussian.position;
         }
 
-        // fn calculate_exit_point(inv_cov_mat:mat3x3<f32>, ray: Ray, hit: HitInfo) -> vec3<f32> {
-        //     // TODO: use the inv_cov_mat instead
-
-        //     // Transform the ray into the ellipsoid's local space
-        //     // let rotationMatrix = quaternion_to_matrix(hit.gaussian.rotation);
-        //     // let transformedRayOrigin = (ray.origin - hit.gaussian.position) * rotationMatrix;
-        //     // let transformedRayDirection = ray.direction * rotationMatrix;
-
-        //     // // Scale the transformed ray to account for ellipsoid scaling
-        //     // let scaledRayOrigin = transformedRayOrigin / hit.gaussian.scale;
-        //     // let scaledRayDirection = transformedRayDirection / hit.gaussian.scale;
-
-        //     // // Calculate the coefficients of the quadratic equation for the ellipsoid-ray intersection
-        //     // // Note: These are the same as used in the entry point calculation, but we will use a different starting point for t
-        //     // let A = dot(scaledRayDirection, scaledRayDirection);
-        //     // let B = 2.0 * dot(scaledRayDirection, scaledRayOrigin);
-        //     // let C = dot(scaledRayOrigin, scaledRayOrigin) - 1.0;
-        //     let localRayOrigin = inv_cov_mat * (ray.origin - hit.gaussian.position);
-        //     let localRayDirection = inv_cov_mat * ray.direction;
-
-        //     // Compute coefficients of the quadratic equation for intersection with a unit sphere
-        //     let a = dot(localRayDirection, localRayDirection);
-        //     let b = 2.0 * dot(localRayDirection, localRayOrigin);
-        //     let c = dot(localRayOrigin, localRayOrigin) - 1.0;
-
-        //     // Solve the quadratic equation
-        //     let discriminant = b * b - 4.0 * a * c;
-        //     if (discriminant < 0.0) {
-        //         // No exit point, return some default value or handle as an error
-        //         return vec3f(0,0,0);
-        //     }
-
-        //     let t0 = (-b - sqrt(discriminant)) / (2.0 * a);
-        //     let t1 = (-b + sqrt(discriminant)) / (2.0 * a);
-
-        //     // The larger t value will be the exit point
-        //     let t_exit = max(t0, t1);
-
-        //     let exitPointLocal = localRayOrigin + t_exit * localRayDirection;
-
-        //     // Transform the exit point back to world space
-        //     let exitPointWorld = rotationMatrix * exitPointLocal + hit.gaussian.position;
-
-        //     return exitPointWorld;
-        // }
-
-
-        fn intersect_ellipsoid(ray: ptr<function, Ray>, gaussian: Gaussian, inv_cov_mat:mat3x3<f32>, spherical_harmonics: array<vec3<f32>, 16>, hit: ptr<function, HitInfo>, material: Material) -> bool {
-            let transformedRayOrigin = inv_cov_mat * ((*ray).origin - gaussian.position);
-            let transformedRayDirection = inv_cov_mat * (*ray).direction;
-
-            // Compute coefficients of the quadratic equation
-            let a = dot(transformedRayDirection, transformedRayDirection);
-            let b = 2.0 * dot(transformedRayDirection, transformedRayOrigin);
-            let c = dot(transformedRayOrigin, transformedRayOrigin) - 1.0;
-
-            let d: f32 = b * b - 4 * a * c;
-            
-            if (d < 0 ) { return false; }
-            
-            var t: f32;
-            let t1: f32 = (-b - sqrt(d)) / (2.0 * a);
-            let t2: f32 = (-b + sqrt(d)) / (2.0 * a);
-
-            // t = min(t1,t2);
-            if ((*ray).t_min < t1 && t1 < (*ray).t_max) {
-                t = t1;
-            } else if ((*ray).t_min < t2 && t2 < (*ray).t_max) {
-                t = t2;
-            } else {
-                return false;
-            }
-            let hit_pos: vec3f = (*ray).origin + (*ray).direction * t;
-
-            // Calculate the normal at the hit position
-            let normal_at_hit: vec3f = normalize(inv_cov_mat * (hit_pos - gaussian.position));
-
-            // Determine if the ray is entering or exiting the ellipsoid
-            if (0.0 < dot((*ray).direction, normal_at_hit)) {
-                // We're exiting the ellipsoid
-                // (*hit).exit = hit_pos;
-                return false;
-            } else {
-                // We're entering the ellipsoid
-                (*hit).has_hit = true;
-                (*hit).dist = t;
-                (*hit).gaussian = gaussian;
-                (*hit).position = hit_pos;
-
-                (*hit).material = material; // TODO this is temporary, use spherical harmonics at some point
-                (*hit).material.color = compute_color_from_sh(hit_pos, spherical_harmonics);
-                (*hit).normal = normal_at_hit;
-                (*hit).entry = hit_pos;
-                (*hit).exit = calculate_exit_point(inv_cov_mat, *ray, *hit);
-            }
-            return (*hit).has_hit;
+        fn inverseRotateVector(v: vec3<f32>, q: vec4<f32>) -> vec3<f32> {
+            let rotationMatrix = quaternion_to_matrix(q);
+            let inverseRotationMatrix = transpose(rotationMatrix);
+            return inverseRotationMatrix * v;
         }
 
-        fn intersect_plane(ray: ptr<function, Ray>, plane: Plane, hit: ptr<function, HitInfo>) -> bool {
-            let o_to_plane: vec3f = plane.position - (*ray).origin;
-            let denominator = dot((*ray).direction, plane.normal);
+
+        fn intersect_ellipsoid(ray: ptr<function, Ray>, gaussian: Gaussian, spherical_harmonics: array<vec3f,16>, hit: ptr<function, HitInfo>, material: Material) -> bool {            
+            let translatedRayOrigin = (*ray).origin - gaussian.position;
             
-            // The plane and the ray are parallel when the denominator gets close to 0
-            if (abs(denominator) < uniforms.eps) {
+            // Apply inverse rotation to the ray to align with the ellipsoid's axes
+            let rotatedRayOrigin = inverseRotateVector(translatedRayOrigin, gaussian.rotation);
+            let rotatedRayDirection = inverseRotateVector((*ray).direction, gaussian.rotation);
+
+            // Scale the ray for the ellipsoid's local space
+            let originNormalized = rotatedRayOrigin / gaussian.scale;
+            let directionNormalized = rotatedRayDirection / gaussian.scale;
+            let a = dot(directionNormalized, directionNormalized);
+            let b = dot(originNormalized, directionNormalized);
+            let c = dot(originNormalized, originNormalized);
+            let discriminant = b * b - a * (c - 1.0);
+            if (discriminant < 0.0) {
                 return false;
             }
 
-            let t = dot(o_to_plane, plane.normal) / denominator;
+            let sqrtDiscriminant = sqrt(discriminant);
+            let t1 = (-b - sqrtDiscriminant) / a;
+            let t2 = (-b + sqrtDiscriminant) / a;
 
-            if (t < (*ray).t_min || (*ray).t_max < t) {
-                return false;
-            }
-            
-            // Update the hit info
-            (*hit).has_hit = true;
-            (*hit).dist = t;
-            (*hit).material = plane.material;
-            (*hit).position = (*ray).origin + (*ray).direction * t;
-            (*hit).normal = normalize(plane.normal);
-            (*hit).shader = 0;
+            (*hit).gaussian = gaussian;
+            (*hit).material = material;
+            (*hit).entry = (*ray).origin + (*ray).direction * min(t1,t2);
+            (*hit).exit = (*ray).origin + (*ray).direction * max(t1,t2);
+            (*hit).material.color = compute_color_from_sh((*hit).entry, spherical_harmonics);
 
             return true;
         }
+        
 
         fn blend_alpha(accumulatedAlpha: f32, newAlpha: f32) -> f32 {
             // Implementing a standard over operator for alpha compositing
@@ -529,35 +372,21 @@
 
             var gauss1: Gaussian = Gaussian(
                 vec3f(0,0,0),   // pos
-                vec3f(1,1,1),   // normal
-                .5,            // opacity
-                vec3f(1,1,1),   // scale
-                // vec4f(0, .3, 0, .7),    // rotation
-                vec4f(0),    // rotation
+                vec3f(1,1,3),   // scale
+                vec4f(0.7,0,0,0.7),    // rotation
+                vec4f(1,1,1, 1),   // normal
+                // normalize(vec4f(0.5,0,1)),    // rotation
                 // gauss1_mat
             );
             var gauss2: Gaussian = Gaussian(
                 vec3f(1,0,0),   // pos
-                vec3f(1,1,1),   // normal
-                .8,            // opacity
-                vec3f(1,1,1),   // scale
-                // vec4f(0, .3, 0, .7),    // rotation
-                vec4f(0),    // rotation
+                vec3f(1,1,3),   // scale
+                // vec4f(0),    // rotation
+                vec4f(.7,0,0,0.7),    // rotation
+                vec4f(1,1,1, 0.8),   // normal
                 // gauss2_mat
             );
             var g = array<Gaussian, 2>(gauss1,gauss2);
-            var inv = array<mat3x3<f32>, 2>(
-                mat3x3<f32>(
-                    30, 0, 0,
-                    0, 30, 0,
-                    0, 0, 30
-                ),
-                mat3x3<f32>(
-                    1, 0, 0,
-                    0, 1, 0,
-                    0, 0, 1
-                )
-            );
             var m = array<Material, 2>(gauss1_mat, gauss2_mat);
             var intersections = array<HitInfo, MAXINTERSECTIONS>();
             var n_intersections: i32 = 0;
@@ -565,18 +394,23 @@
             // Testing of hard coded ellipsoids / spheres
             // for (var i: u32 = 0; i < 2; i++) {
             //     var hit = HitInfo();
-            //     if (intersect_ellipsoid(ray, g[i], inv[i], &hit, m[i])) {
+            //     if (intersect_ellipsoid(ray, g[i], &hit, m[i])) {
             //         intersections[n_intersections] = hit;
             //         n_intersections += 1;
             //     }
             // }
             
             // Check for hit against all ellipsoids - for now there are only N for testing
-            for (var i: u32 = 0; i < 10000; i++) {
+            for (var i: u32 = 0; i < 50000; i++) {
+                if (MAXINTERSECTIONS - 1 <= n_intersections) {
+                    continue;
+                }
                 var hit = HitInfo();
-                if (intersect_ellipsoid(ray, gaussians[i], inv[0], spherical_harmonics[i], &hit, m[i%2])) {
-                    intersections[n_intersections] = hit;
-                    n_intersections += 1;
+                if (intersect_ellipsoid(ray, gaussians[i], spherical_harmonics[i], &hit, m[i%2])) {
+                    if (2 < length(hit.entry - uniforms.camera_position)) {
+                        intersections[n_intersections] = hit;
+                        n_intersections += 1;
+                    }
                 }
             }
 
@@ -585,8 +419,8 @@
             //     var hit = HitInfo();
             //     let sphere: Sphere = Sphere(
             //         gaussians[i].position,
-            //         .05,//gaussians[i].scale.x,
-            //         gauss1_mat,
+            //         0.05,
+            //         m[i%2],
             //         0 // shader
             //     );
             //     if (intersect_sphere(ray, sphere, &hit)) {
@@ -598,10 +432,12 @@
             // TODO: Real alpha blending
             // Iterate over the hits
             for (var i: i32 = n_intersections - 1; 0 <= i; i--) {
-                // shaded_result += intersections[i].material.color * calculate_alpha(intersections[i]);
+                // shaded_result += intersections[i].material.color;
                 // shaded_result += intersections[i].normal;
                 shaded_result += intersections[i].material.color * calculate_alpha(intersections[i]);
             }
+            // shaded_result = intersections[0].material.color;
+            // shaded_result = intersections[0].gaussian.normal.rgb;
 
             return shaded_result;
         }
