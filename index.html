@@ -140,7 +140,7 @@
             );
         }
 
-        fn intersect_sphere(ray: ptr<function, Ray>, sphere: Sphere, hit: ptr<function, HitInfo>) -> bool {            
+        fn intersect_sphere(ray: ptr<function, Ray>, sphere: Sphere, spherical_harmonics: array<vec3f, 16>, hit: ptr<function, HitInfo>) -> bool {            
             let o_to_sphere: vec3f = (*ray).origin - sphere.center;
 
             let a: f32 = dot((*ray).direction, (*ray).direction);
@@ -155,28 +155,24 @@
             let t1: f32 = (-b - sqrt(d)) / (2.0 * a);
             let t2: f32 = (-b + sqrt(d)) / (2.0 * a);
 
-            if ((*ray).t_min < t1 && t1 < (*ray).t_max) {
-                t = t1;
-            } else if ((*ray).t_min < t2 && t2 < (*ray).t_max) {
-                t = t2;
-            } else {
-                return false;
-            }
+            // if ((*ray).t_min < t1 && t1 < (*ray).t_max) {
+            //     t = t1;
+            // } else if ((*ray).t_min < t2 && t2 < (*ray).t_max) {
+            //     t = t2;
+            // } else {
+            //     return false;
+            // }
 
-            let hit_pos: vec3f = (*ray).origin + (*ray).direction * t;
 
             // Update the hit info
             (*hit).has_hit = true;
-            (*hit).dist = t;
+            (*hit).dist = min(t1,t2);
+            (*hit).entry = (*ray).origin + (*ray).direction * min(t1,t2);
+            (*hit).exit = (*ray).origin + (*ray).direction * max(t1,t2);
             (*hit).material = sphere.material;
-            (*hit).position = hit_pos;
-            (*hit).normal = normalize(hit_pos - sphere.center);
+            (*hit).material.color = compute_color_from_sh((*hit).entry, spherical_harmonics);
+            (*hit).normal = normalize((*hit).entry - sphere.center);
             (*hit).shader = sphere.shader;
-
-            // We hit the inside of the sphere, flip normal
-            if (0.0 < dot((*ray).direction, (*hit).normal)) {
-                (*hit).normal = -(*hit).normal;
-            }
             
             return true;
         }
@@ -225,36 +221,6 @@
             let pathLength: f32 = length(hit.exit - hit.entry);
             let totalAlpha: f32 = alphaAtMidPoint * pathLength;  // Approximate total alpha
             return totalAlpha;
-        }
-
-
-        fn calculate_exit_point(inv_cov_mat:mat3x3<f32>, ray: Ray, hit: HitInfo) -> vec3<f32> {
-            // Transform the ray into the local space defined by the inverse covariance matrix
-            let localRayOrigin = inv_cov_mat * (ray.origin - hit.gaussian.position);
-            let localRayDirection = inv_cov_mat * ray.direction;
-
-            // Compute coefficients of the quadratic equation for a unit sphere
-            let a = dot(localRayDirection, localRayDirection);
-            let b = 2.0 * dot(localRayOrigin, localRayDirection);
-            let c = dot(localRayOrigin, localRayOrigin) - 1.0;
-
-            // Solve the quadratic equation
-            let discriminant = b * b - 4.0 * a * c;
-            if (discriminant < 0.0) {
-                return vec3<f32>(0.0, 1.0, 0.0); // No real solution, exit point doesn't exist
-            }
-
-            let t0 = (-b - sqrt(discriminant)) / (2.0 * a);
-            let t1 = (-b + sqrt(discriminant)) / (2.0 * a);
-
-            let t_exit = max(t0, t1);
-
-            let exitPointLocal = localRayOrigin + t_exit * localRayDirection;
-            let scaledExitPoint = exitPointLocal * hit.gaussian.scale;
-            let worldExitPoint = rotate_vector(scaledExitPoint, quaternion_to_matrix(hit.gaussian.rotation));
-
-            // Translate the point by the Gaussian's position to move it back to world space
-            return worldExitPoint + hit.gaussian.position;
         }
 
         fn inverseRotateVector(v: vec3<f32>, q: vec4<f32>) -> vec3<f32> {
@@ -311,13 +277,13 @@
             0.5462742152960396
         );
         const SH_C3 = array(
-            -0.5900435899266435f,
-            2.890611442640554f,
-            -0.4570457994644658f,
-            0.3731763325901154f,
-            -0.4570457994644658f,
-            1.445305721320277f,
-            -0.5900435899266435f
+            -0.5900435899266435,
+            2.890611442640554,
+            -0.4570457994644658,
+            0.3731763325901154,
+            -0.4570457994644658,
+            1.445305721320277,
+            -0.5900435899266435
         );
 
         fn compute_color_from_sh(position: vec3<f32>, sh: array<vec3<f32>, 16>) -> vec3<f32> {
@@ -401,213 +367,46 @@
             // }
             
             // Check for hit against all ellipsoids - for now there are only N for testing
-            for (var i: u32 = 0; i < 50000; i++) {
-                if (MAXINTERSECTIONS - 1 <= n_intersections) {
-                    continue;
-                }
-                var hit = HitInfo();
-                if (intersect_ellipsoid(ray, gaussians[i], spherical_harmonics[i], &hit, m[i%2])) {
-                    if (2 < length(hit.entry - uniforms.camera_position)) {
-                        intersections[n_intersections] = hit;
-                        n_intersections += 1;
-                    }
-                }
-            }
-
-            // Model as spheres for testing
-            // for (var i: u32 = 0; i < 10000; i++) {
+            // for (var i: u32 = 0; i < 50000; i++) {
+            //     if (MAXINTERSECTIONS - 1 <= n_intersections) {
+            //         continue;
+            //     }
             //     var hit = HitInfo();
-            //     let sphere: Sphere = Sphere(
-            //         gaussians[i].position,
-            //         0.05,
-            //         m[i%2],
-            //         0 // shader
-            //     );
-            //     if (intersect_sphere(ray, sphere, &hit)) {
-            //         intersections[n_intersections] = hit;
-            //         n_intersections += 1;
+            //     if (intersect_ellipsoid(ray, gaussians[i], spherical_harmonics[i], &hit, m[i%2])) {
+            //         // if (2 < length(hit.entry - uniforms.camera_position)) {
+            //             intersections[n_intersections] = hit;
+            //             n_intersections += 1;
+            //         // }
             //     }
             // }
+
+            // Model as spheres for testing
+            for (var i: u32 = 0; i < 10000; i++) {
+                var hit = HitInfo();
+                let sphere: Sphere = Sphere(
+                    gaussians[i].position,
+                    0.05,
+                    m[i%2],
+                    0 // shader
+                );
+                if (intersect_sphere(ray, sphere, spherical_harmonics[i], &hit)) {
+                    intersections[n_intersections] = hit;
+                    n_intersections += 1;
+                }
+            }
             
             // TODO: Real alpha blending
             // Iterate over the hits
-            for (var i: i32 = n_intersections - 1; 0 <= i; i--) {
-                // shaded_result += intersections[i].material.color;
-                // shaded_result += intersections[i].normal;
-                shaded_result += intersections[i].material.color * calculate_alpha(intersections[i]);
-            }
-            // shaded_result = intersections[0].material.color;
+            // for (var i: i32 = n_intersections - 1; 0 <= i; i--) {
+            //     shaded_result += intersections[i].material.color;
+            //     // shaded_result += intersections[i].normal;
+            //     // shaded_result += intersections[i].material.color * calculate_alpha(intersections[i]);
+            // }
+            shaded_result = intersections[n_intersections - 1].material.color;
             // shaded_result = intersections[0].gaussian.normal.rgb;
 
             return shaded_result;
         }
-
-        // fn intersect_scene(ray: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
-        //     // Scene description
-        //     let default_material: Material = Material();
-        //     var sphere_mat = default_material;
-        //     var gauss1_mat = default_material;
-        //     var gauss2_mat = default_material;
-        //     var plane_mat = default_material;
-        //     sphere_mat.color = vec3f(0.5, 0.0, 0.0);
-        //     gauss1_mat.color = vec3f(0.5, 0.0, 0.0);
-        //     gauss2_mat.color = vec3f(0.0, 0.0, 0.5);
-        //     plane_mat.color = vec3f(.1);
-
-        //     let sphere: Sphere = Sphere(
-        //         vec3(2.5,0,0),
-        //         1,
-        //         sphere_mat,
-        //         0 // shader
-        //     );
-        //     let plane = Plane(
-        //         vec3f(0, 0, 0),
-        //         vec3f(0, 0.0, -1.0),
-        //         plane_mat
-        //     );
-        //     var gauss1: Gaussian = Gaussian(
-        //         vec3f(0,0,0),   // pos
-        //         vec3f(1,1,1),   // normal
-        //         1.0,            // opacity
-        //         vec3f(1,1,2),   // scale
-        //         // vec4f(0, .3, 0, .7),    // rotation
-        //         vec4f(0),    // rotation
-        //         // gauss1_mat
-        //     );
-        //     var gauss2: Gaussian = Gaussian(
-        //         vec3f(1,0,0),   // pos
-        //         vec3f(1,1,1),   // normal
-        //         1.0,            // opacity
-        //         vec3f(1,1,2),   // scale
-        //         // vec4f(0, .3, 0, .7),    // rotation
-        //         vec4f(0),    // rotation
-        //         // gauss2_mat
-        //     );
-        //     // rotates around the y-axis: vec4f(0.0, 0.7071067811865476, 0.0, 0.7071067811865475)
-        //     // rotates around the z-axis: vec4f(0.0, 0.0, 0.7071067811865476, 0.7071067811865475)
-
-        //     // if (intersect_sphere(ray, sphere, hit)) {
-        //     //    (*ray).t_max = (*hit).dist;
-        //     // }
-
-        //     if (intersect_ellipsoid(ray, gauss2, hit, gauss2_mat)) {
-        //         (*ray).t_max = (*hit).dist;
-        //     }
-
-        //     if (intersect_ellipsoid(ray, gauss1, hit, gauss1_mat)) {
-        //         (*ray).t_max = (*hit).dist;
-        //     }
-
-            
-
-        //     // if (intersect_plane(ray, plane, hit)) {
-        //     //     (*ray).t_max = (*hit).dist;
-        //     // }
-
-        //     // This is the bottleneck - too many points takes forever
-        //     // for (var index: u32 = 0; index < 100; index++) { // arrayLength(&gaussians)
-        //     // //     if (intersect_ellipsoid(ray, gaussians[gaussian_ordering[index]], hit, gauss1_mat)) {
-        //     // //         (*ray).t_max = (*hit).dist;
-        //     // //     }
-        //     // }
-
-        //     // for (var index: u32 = 0; index < 2500; index++) { // arrayLength(&gaussians)
-        //     //     let sphere: Sphere = Sphere(
-        //     //         gaussians[index].position,
-        //     //         // gaussians[gaussian_ordering[index]].position,
-        //     //         0.025,
-        //     //         sphere_mat,
-        //     //         0 // mirror
-        //     //     );
-
-        //     //     // Points too close, temporary
-        //     //     if (length(gaussians[index].position - uniforms.camera_position) < 2) {
-        //     //         continue;
-        //     //     }
-        //     //     if (intersect_sphere(ray, sphere, hit)) {
-        //     //        (*ray).t_max = (*hit).dist;
-        //     //     }
-        //     // }
-
-        //     // var n_points: u32 = 0;
-        //     // var max_points: u32 = 50000;
-        //     // for (var index: u32 = 0; index < arrayLength(&gaussians); index++) { // arrayLength(&gaussians)
-        //     //     let sphere: Sphere = Sphere(
-        //     //         // gaussians[index].position,
-        //     //         gaussians[gaussian_ordering[index]].position,
-        //     //         0.025,
-        //     //         sphere_mat,
-        //     //         0 // mirror
-        //     //     );
-
-        //     //     // Points too close, temporary
-        //     //     if (2 < length(sphere.center - uniforms.camera_position)) {
-        //     //         if (intersect_sphere(ray, sphere, hit)) {
-        //     //             (*ray).t_max = (*hit).dist;
-        //     //         }
-        //     //         n_points += 1;
-        //     //     }
-        //     //     if (max_points <= n_points) {
-        //     //         break;
-        //     //     }
-        //     // }
-
-        //     return (*hit).has_hit;
-        // }
-
-        // fn shade(ray: ptr<function, Ray>, hit: HitInfo) -> vec3f {            
-        //     switch hit.shader {
-        //         // Debugging flat objects etc.
-        //         case 0 { return hit.material.color; }
-
-        //         // Gaussians / ellipsoids
-        //         case 1 {
-        //             (*ray).origin = hit.position;
-        //             (*ray).t_min = uniforms.eps;
-        //             (*ray).t_max = TMAX;
-
-        //             // If we are exiting the gauss
-        //             if (length(hit.exit) != 0.0) {
-        //                 let out = hit.material.color;// * calculate_alpha(hit);
-        //                 return out;
-        //                 // return vec3f();
-
-        //             // We are just entering the gaussian
-        //             } else {
-        //                 return vec3f();
-        //             }
-        //         } 
-        //         case default { return hit.material.color; }
-        //     }
-        // }
-
-        // fn shade(ray: ptr<function, Ray>, hit: ptr<function, HitInfo>, seed: ptr<function, u32>) -> vec3f {            
-        //     switch (*hit).shader {
-        //         // Debugging flat objects etc.
-        //         case 0 { return (*hit).material.color; }
-
-        //         // Gaussians / ellipsoids
-        //         case 1 {
-        //             (*hit).has_hit = false;
-        //             (*ray).origin = (*hit).position;
-        //             (*ray).t_min = uniforms.eps;
-        //             (*ray).t_max = TMAX;
-
-        //             // If we are exiting the gauss
-        //             if (length((*hit).exit) != 0.0) {
-        //                 let out = (*hit).material.color * calculate_alpha(hit, (*hit).gaussian);
-        //                 (*hit).exit = vec3f();
-        //                 (*hit).entry = vec3f();
-        //                 return out;
-
-        //             // We are just entering the gaussian
-        //             } else {
-        //                 return vec3f();
-        //             }
-        //         } 
-        //         case default { return (*hit).material.color; }
-        //     }
-        // }
 
         @fragment
         fn main_fs(@builtin(position) fragcoord: vec4f, @location(0) coords: vec2f) -> FSOut {
@@ -628,32 +427,6 @@
             var hit = HitInfo();
 
             var shaded_result = intersect_scene(&ray);
-
-            // var shaded_result = vec3f(0,0,0);
-
-            // var intersections: array<HitInfo, MAXINTERSECTIONS> = intersect_scene(&ray);
-
-            // for (var i: u32 = 0; i < MAXINTERSECTIONS; i++) {
-
-            //     shaded_result += vec3f(0.5,0,0);//shade(&ray, intersections[i], &seed);
-                
-            //     // Way to check if we have hit the last intersection "stop-tag"
-            //     if (!intersections[i].has_hit) {
-            //         break;
-            //     }
-            // }
-
-            // for (var i: u32 = 0; i < MAXINTERSECTIONS; i++) {
-            //     if (intersect_scene(&ray, &hit)) {
-            //         shaded_result += shade(&ray, &hit, &seed);
-            //     } else {
-            //         shaded_result += BACKGROUNDCOLOR.rgb;
-            //         break;
-            //     }
-            //     if (hit.has_hit) {
-            //         break;
-            //     }
-            // }
             
             let curr_sum = textureLoad(renderTexture, vec2u(fragcoord.xy), 0).rgb * f32(uniforms.frame_number); 
             var accum_color = (shaded_result + curr_sum)/(uniforms.frame_number + 1);
