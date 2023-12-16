@@ -133,6 +133,52 @@ function Quaternion2RotMatrix(q) {
     ]);
 }
 
+function getPrincipalAxes(scaleVector, rotationQuaternion) {
+    // Unrotated axes
+    let r1 = [scaleVector[0], 0, 0];
+    let r2 = [0, scaleVector[1], 0];
+    let r3 = [0, 0, scaleVector[2]];
+
+    // Rotated axes
+    let rotatedR1 = rotateVector(rotationQuaternion, r1);
+    let rotatedR2 = rotateVector(rotationQuaternion, r2);
+    let rotatedR3 = rotateVector(rotationQuaternion, r3);
+
+    return {
+        r1: rotatedR1,
+        r2: rotatedR2,
+        r3: rotatedR3
+    };
+}
+
+// Implement the rotateVector function based on your quaternion to matrix conversion
+function rotateVector(quaternion, vector) {
+    // Convert quaternion to rotation matrix
+    let rotationMatrix = Quaternion2RotMatrix(quaternion);
+    return mult(rotationMatrix, vector);
+}
+
+
+function CalculateEllipsoidBounds(positionVector, scaleVector, rotationVector) {
+    P = getPrincipalAxes(scaleVector, rotationVector);
+    
+    // https://math.stackexchange.com/a/2348806
+    x = Math.sqrt(P.r1[0]*P.r1[0] + P.r1[1]*P.r1[1] + P.r1[2]*P.r1[2])
+    y = Math.sqrt(P.r2[0]*P.r2[0] + P.r2[1]*P.r2[1] + P.r2[2]*P.r2[2])
+    z = Math.sqrt(P.r3[0]*P.r3[0] + P.r3[1]*P.r3[1] + P.r3[2]*P.r3[2])
+  	
+    return {
+        min: subtract(positionVector, [x,y,z]),
+        max: add(positionVector, [x,y,z])
+    }
+}
+
+function TransformationMatrix(scaleVector, rotationVector) {
+    let S = DiagonalMatrix3d(scaleVector); // 3x3 diagonal matrix
+    let R = Quaternion2RotMatrix(rotationVector); // ROtation matrix
+    return mult(R,S);
+}
+
 function CovarianceMatrix3d(scaleVector, rotationVector) {
     let S = DiagonalMatrix3d(scaleVector); // 3x3 diagonal matrix
     let R = Quaternion2RotMatrix(rotationVector);
