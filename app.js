@@ -64,6 +64,9 @@ function configureBindGroup(device, drawingInfo, pipeline, textures) {
         size: uniformValues.byteLength,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
+
+    var buffers = []
+    build_bsp_tree(drawingInfo.vertices, device, buffers);
     
     const verticesBuffer = device.createBuffer({
         size: drawingInfo.vertices.byteLength,
@@ -100,7 +103,11 @@ function configureBindGroup(device, drawingInfo, pipeline, textures) {
             { binding: 2, resource: { buffer: verticesBuffer }},
             { binding: 3, resource: { buffer: vertexOrderingBuffer }},
             { binding: 4, resource: { buffer: sphericalHarmonicsBuffer }},
-            { binding: 5, resource: { buffer: invCovMatricesBuffer }}
+            { binding: 5, resource: { buffer: invCovMatricesBuffer }},
+            { binding: 6, resource: { buffer: buffers.aabb }},
+            { binding: 7, resource: { buffer: buffers.treeIds }},
+            { binding: 8, resource: { buffer: buffers.bspTree }},
+            { binding: 9, resource: { buffer: buffers.bspPlanes }}
         ],
     });
 
