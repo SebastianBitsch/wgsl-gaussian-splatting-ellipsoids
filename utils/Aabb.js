@@ -6,6 +6,7 @@ function Aabb(v0, v1, v2)
     this.min = vec3(Math.min(v0[0], Math.min(v1[0], v2[0])), Math.min(v0[1], Math.min(v1[1], v2[1])), Math.min(v0[2], Math.min(v1[2], v2[2])));
     this.max = vec3(Math.max(v0[0], Math.max(v1[0], v2[0])), Math.max(v0[1], Math.max(v1[1], v2[1])), Math.max(v0[2], Math.max(v1[2], v2[2])));
   }
+  // This is what we are doing, passing min and max corner 
   else if(v1) {
     this.min = vec3(v0[0], v0[1], v0[2]);
     this.max = vec3(v1[0], v1[1], v1[2]);

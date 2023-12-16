@@ -18,12 +18,12 @@ var tree_objects = [];
 var root = null;
 var treeIds, bspTree, bspPlanes;
 
-function AccObj(idx, v0, v1, v2)
-{
-  this.prim_idx = idx;
-  this.bbox = new Aabb(v0, v1, v2);
-  return this;
+function AccObj(idx, min, max) {
+    this.prim_idx = idx;
+    this.bbox = new Aabb(min, max);
+    return this;
 }
+  
 
 function BspTree(objects)
 {
@@ -151,92 +151,98 @@ function subdivide_node(node, bbox, level, objects)
   }
 }
 
-function build_bsp_tree(drawingInfo, device, buffers)
-{
-  var objects = [];
-  for(var i = 0; i < drawingInfo.indices.length/4; ++i) {
-    let face = [drawingInfo.indices[i*4]*4, drawingInfo.indices[i*4 + 1]*4, drawingInfo.indices[i*4 + 2]*4];
-    let v0 = vec3(drawingInfo.vertices[face[0]], drawingInfo.vertices[face[0] + 1], drawingInfo.vertices[face[0] + 2]);
-    let v1 = vec3(drawingInfo.vertices[face[1]], drawingInfo.vertices[face[1] + 1], drawingInfo.vertices[face[1] + 2]);
-    let v2 = vec3(drawingInfo.vertices[face[2]], drawingInfo.vertices[face[2] + 1], drawingInfo.vertices[face[2] + 2]);
-    let acc_obj = new AccObj(i, v0, v1, v2);
-    objects.push(acc_obj);
-  }
-  root = new BspTree(objects);
-  treeIds = new Uint32Array(tree_objects.length);
-  for(var i = 0; i < tree_objects.length; ++i)
-    treeIds[i] = tree_objects[i].prim_idx;
-  const bspTreeNodes = (1<<(max_level + 1)) - 1;
-  bspPlanes = new Float32Array(bspTreeNodes);
-  bspTree = new Uint32Array(bspTreeNodes*4);
+function build_bsp_tree(verticesArray, device, buffers) {
+    var objects = [];
+    for (var i = 0; i < verticesArray.length / 16; ++i) {
+        let position    = Array.from(verticesArray.slice(i * 16, i * 16 + 3));            // position
+        let scale       = Array.from(verticesArray.slice(i * 16 + 4, i * 16 + 4 + 3));     // scale
+        let rotation    = Array.from(verticesArray.slice(i * 16 + 8, i * 16 + 8 + 4));    // rotation
+        let normal      = Array.from(verticesArray.slice(i * 16 + 12, i * 16 + 12 + 3));  // normal
+        let opacity      = Array.from(verticesArray.slice(i * 16 + 15, i * 16 + 16));  // opacity
+
+        let bounds = CalculateEllipsoidBounds(position, scale, rotation);
+        
+        let acc_obj = new AccObj(i, bounds.min, bounds.max);
+        objects.push(acc_obj);
+    }
+    root = new BspTree(objects);
+    treeIds = new Uint32Array(tree_objects.length);
+    for (var i = 0; i < tree_objects.length; ++i) {
+        treeIds[i] = tree_objects[i].prim_idx;
+    }
+    const bspTreeNodes = (1<<(max_level + 1)) - 1;
+    bspPlanes = new Float32Array(bspTreeNodes);
+    bspTree = new Uint32Array(bspTreeNodes*4);
   
-  function build_bsp_array(node, level, branch)
-  {
-    if(level > max_level)
-      return;
-    let idx = (1<<level) - 1 + branch;
-    bspTree[idx*4] = node.axis_leaf + (node.count<<2);
-    bspTree[idx*4 + 1] = node.id;
-    bspTree[idx*4 + 2] = (1<<(level + 1)) - 1 + 2*branch;
-    bspTree[idx*4 + 3] = (1<<(level + 1)) + 2*branch;
-    bspPlanes[idx] = node.plane;
-    if(node.axis_leaf === BspNodeType.bsp_leaf)
-      return;
-    build_bsp_array(node.left, level + 1, branch*2);
-    build_bsp_array(node.right, level + 1, branch*2 + 1);
-  }
-  build_bsp_array(root, 0, 0);
+    function build_bsp_array(node, level, branch) {
+        if(level > max_level) {
+            return;
+        }
+        let idx = (1<<level) - 1 + branch;
+        bspTree[idx*4] = node.axis_leaf + (node.count<<2);
+        bspTree[idx*4 + 1] = node.id;
+        bspTree[idx*4 + 2] = (1<<(level + 1)) - 1 + 2*branch;
+        bspTree[idx*4 + 3] = (1<<(level + 1)) + 2*branch;
+        bspPlanes[idx] = node.plane;
+        if (node.axis_leaf === BspNodeType.bsp_leaf) {
+            return;
+        }
+        build_bsp_array(node.left, level + 1, branch*2);
+        build_bsp_array(node.right, level + 1, branch*2 + 1);
+    }
 
-  buffers.positions = device.createBuffer({
-    size: drawingInfo.vertices.byteLength,
-    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
-  });
-  device.queue.writeBuffer(buffers.positions, 0, drawingInfo.vertices);
+    build_bsp_array(root, 0, 0);
 
-  buffers.normals = device.createBuffer({
-    size: drawingInfo.normals.byteLength,
-    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
-  });
-  device.queue.writeBuffer(buffers.normals, 0, drawingInfo.normals);
+    // buffers.positions = device.createBuffer({
+    //     size: drawingInfo.vertices.byteLength,
+    //     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    // });
+    // device.queue.writeBuffer(buffers.positions, 0, drawingInfo.vertices);
 
-  buffers.colors = device.createBuffer({
-    size: drawingInfo.colors.byteLength,
-    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
-  });
-  device.queue.writeBuffer(buffers.colors, 0, drawingInfo.colors);
+    // buffers.normals = device.createBuffer({
+    //     size: drawingInfo.normals.byteLength,
+    //     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    // });
+    // device.queue.writeBuffer(buffers.normals, 0, drawingInfo.normals);
 
-  buffers.indices = device.createBuffer({
-    size: drawingInfo.indices.byteLength, 
-    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
-  });
-  device.queue.writeBuffer(buffers.indices, 0, drawingInfo.indices);
+    // buffers.colors = device.createBuffer({
+    //     size: drawingInfo.colors.byteLength,
+    //     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    // });
+    // device.queue.writeBuffer(buffers.colors, 0, drawingInfo.colors);
+
+    // buffers.indices = device.createBuffer({
+    //     size: drawingInfo.indices.byteLength, 
+    //     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    // });
+    // device.queue.writeBuffer(buffers.indices, 0, drawingInfo.indices);
   
-  buffers.treeIds = device.createBuffer({
-    size: treeIds.byteLength, 
-    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
-  });
-  device.queue.writeBuffer(buffers.treeIds, 0, treeIds);
+    buffers.treeIds = device.createBuffer({
+        size: treeIds.byteLength, 
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    });
+    device.queue.writeBuffer(buffers.treeIds, 0, treeIds);
 
-  buffers.bspTree = device.createBuffer({
-    size: bspTree.byteLength, 
-    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
-  });
-  device.queue.writeBuffer(buffers.bspTree, 0, bspTree);
+    buffers.bspTree = device.createBuffer({
+        size: bspTree.byteLength, 
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    });
+    device.queue.writeBuffer(buffers.bspTree, 0, bspTree);
 
-  buffers.bspPlanes = device.createBuffer({
-    size: bspPlanes.byteLength, 
-    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
-  });
-  device.queue.writeBuffer(buffers.bspPlanes, 0, bspPlanes);
+    buffers.bspPlanes = device.createBuffer({
+        size: bspPlanes.byteLength, 
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    });
+    device.queue.writeBuffer(buffers.bspPlanes, 0, bspPlanes);
 
-  const bbox = flatten([vec4(root.bbox.min), vec4(root.bbox.max)]);
-  buffers.aabb = device.createBuffer({
-    size: bbox.byteLength,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
-  device.queue.writeBuffer(buffers.aabb, 0, bbox);
+    const bbox = flatten([vec4(root.bbox.min), vec4(root.bbox.max)]);
+    buffers.aabb = device.createBuffer({
+        size: bbox.byteLength,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(buffers.aabb, 0, bbox);
 
-  return buffers;
+    return buffers;
 }
 
 
