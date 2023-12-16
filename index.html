@@ -35,6 +35,11 @@
         @group(0) @binding(4) var<storage, read> spherical_harmonics: array<array<vec3<f32>, 16>>;
         @group(0) @binding(5) var<storage, read> inv_covariance_matrices: array<mat3x3<f32>>;
 
+        @group(0) @binding(6) var<uniform> aabb: AABB;
+        @group(0) @binding(7) var<storage> tree_ids: array<u32>; 
+        @group(0) @binding(8) var<storage> bsp_tree: array<vec4u>;
+        @group(0) @binding(9) var<storage> bsp_planes: array<f32>;
+
         struct Uniforms {
             eps: f32,
             aspect_ratio: f32,
@@ -68,6 +73,11 @@
         struct FSOut {
             @location(0) frame: vec4f, 
             @location(1) accum: vec4f
+        };
+
+        struct AABB {
+            min: vec3f,
+            max: vec3f
         };
 
         struct Ray {
@@ -178,6 +188,75 @@
             
             return true;
         }
+
+
+        fn intersect_trimesh(ray: ptr<function, Ray>, hit: ptr<function, HitInfo>) -> bool {
+            var branch_lvl: u32 = 0;
+            var near_node: u32 = 0;
+            var far_node: u32 = 0;
+            var t = 0.0;
+            var node: u32 = 0;
+            
+            for (var i: u32 = 0; i <= MAX_LEVEL; i++) {
+                let tree_node = bsp_tree[node];
+                let node_axis_leaf = tree_node.x&3u;
+                if (node_axis_leaf == BSP_LEAF) {
+                    
+                    // A leaf was found
+                    let node_count = tree_node.x>>2u;
+                    let node_id = tree_node.y;
+                    var found = false;
+
+                    for (var j: u32 = 0; j < node_count; j++) {
+                        let obj_idx = tree_ids[node_id + j];
+                        if (intersect_ellipsoid(ray, obj_idx, hit)) {
+                            (*ray).t_max = (*hit).dist;
+                            found = true;    
+                        }
+                    }
+                    if (found) {
+                        return true;
+                    } else if (branch_lvl == 0u) {
+                        return false;
+                    } else {
+                        branch_lvl--;
+                        i = branch_node[branch_lvl].x;
+                        node = branch_node[branch_lvl].y;
+                        (*ray).t_min = branch_ray[branch_lvl].x;
+                        (*ray).t_max = branch_ray[branch_lvl].y;
+                        continue;
+                    }
+                    // ---
+                }
+
+                let axis_direction = (*ray).direction[node_axis_leaf]; 
+                let axis_origin = (*ray).origin[node_axis_leaf]; 
+                if (0.0 <= axis_direction) {
+                    near_node = tree_node.z;    // left
+                    far_node = tree_node.w;     // right
+                } else {
+                    near_node = tree_node.w;    // right
+                    far_node = tree_node.z;     // left
+                }
+                let node_plane = bsp_planes[node];
+                let denom = select(axis_direction, 1.0e-8f, abs(axis_direction) < 1.0e-8f); 
+                t = (node_plane - axis_origin)/denom;
+                if (t > (*ray).t_max) { 
+                    node = near_node; 
+                } else if (t < (*ray).t_min) { 
+                    node = far_node; 
+                } else {
+                    branch_node[branch_lvl].x = i; 
+                    branch_node[branch_lvl].y = far_node; 
+                    branch_ray[branch_lvl].x = t; 
+                    branch_ray[branch_lvl].y = (*ray).t_max; 
+                    branch_lvl++;
+                    (*ray).t_max = t;
+                    node = near_node; 
+                }
+            }
+            return false;
+        }
         
 
         fn quaternion_to_matrix(q: vec4f) -> mat3x3<f32> {
@@ -232,7 +311,9 @@
         }
 
 
-        fn intersect_ellipsoid(ray: ptr<function, Ray>, gaussian: Gaussian, spherical_harmonics: array<vec3f,16>, hit: ptr<function, HitInfo>, material: Material) -> bool {            
+        fn intersect_ellipsoid(ray: ptr<function, Ray>, id: u32, hit: ptr<function, HitInfo>) -> bool {            
+            let gaussian: Gaussian = gaussians[id];
+            let spherical_harmonics: array<vec3f,16> = spherical_harmonics[id];
             let translatedRayOrigin = (*ray).origin - gaussian.position;
             
             // Apply inverse rotation to the ray to align with the ellipsoid's axes
@@ -255,7 +336,7 @@
             let t2 = (-b + sqrtDiscriminant) / a;
 
             (*hit).gaussian = gaussian;
-            (*hit).material = material;
+            (*hit).material = Material();
             (*hit).entry = (*ray).origin + (*ray).direction * min(t1,t2);
             (*hit).exit = (*ray).origin + (*ray).direction * max(t1,t2);
             (*hit).material.color = compute_color_from_sh((*hit).entry, spherical_harmonics);
@@ -362,7 +443,7 @@
             // Testing of hard coded ellipsoids / spheres
             // for (var i: u32 = 0; i < 2; i++) {
             //     var hit = HitInfo();
-            //     if (intersect_ellipsoid(ray, g[i], &hit, m[i])) {
+            //     if (intersect_ellipsoid(ray, i, &hit, m[i])) {
             //         intersections[n_intersections] = hit;
             //         n_intersections += 1;
             //     }
@@ -370,17 +451,22 @@
             
             // Check for hit against all ellipsoids - for now there are only N for testing
             // Higher than 50000 fails, can hopefully be solved with a BVH
-            for (var i: u32 = 0; i < 50000; i++) {
-                if (MAXINTERSECTIONS - 1 <= n_intersections) {
-                    continue;
-                }
-                var hit = HitInfo();
-                if (intersect_ellipsoid(ray, gaussians[i], spherical_harmonics[i], &hit, m[i%2])) {
-                    // if (2 < length(hit.entry - uniforms.camera_position)) {
-                        intersections[n_intersections] = hit;
-                        n_intersections += 1;
-                    // }
-                }
+            // for (var i: u32 = 0; i < 50000; i++) {
+            //     if (MAXINTERSECTIONS - 1 <= n_intersections) {
+            //         continue;
+            //     }
+            //     var hit = HitInfo();
+            //     if (intersect_ellipsoid(ray, i, &hit, m[i%2])) {
+            //         // if (2 < length(hit.entry - uniforms.camera_position)) {
+            //             intersections[n_intersections] = hit;
+            //             n_intersections += 1;
+            //         // }
+            //     }
+            // }
+            var hit = HitInfo();
+            if (intersect_trimesh(ray, &hit)) {
+                intersections[n_intersections] = hit;
+                n_intersections += 1;
             }
 
             // Model as spheres for testing
@@ -425,6 +511,11 @@
             let b = spherical_harmonics[0];
             var c = gaussian_ordering[0];
             var d = inv_covariance_matrices[0];
+
+            var e = aabb;
+            var f = tree_ids[0];
+            var g = bsp_tree[0];
+            var h = bsp_planes[0];
 
             var ray = get_camera_ray(uv);
             var hit = HitInfo();
