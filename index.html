@@ -19,7 +19,7 @@
         const TMIN: f32 = 0.0;
         const TMAX: f32 = 1000.0;
         const MAXINTERSECTIONS: i32 = 12;
-        const BACKGROUNDCOLOR: vec4f = vec4f(0.1, 0.3, 0.6, 1.0);
+        const BACKGROUNDCOLOR: vec4f = vec4f(1); // white
 
         const MAX_LEVEL: u32 = 20;
         const BSP_LEAF: u32 = 3;
@@ -30,8 +30,6 @@
         @group(0) @binding(1) var renderTexture: texture_2d<f32>;
 
         @group(0) @binding(2) var<storage, read> gaussians: array<Gaussian>;
-        // @group(0) @binding(3) var<storage, read> gaussian_ordering: array<u32>;
-        // @group(0) @binding(4) var<storage, read> spherical_harmonics: array<SphericalHarmonics>;
         @group(0) @binding(3) var<storage, read> spherical_harmonics: array<array<vec3<f32>, 16>>;
         @group(0) @binding(4) var<storage, read> inv_covariance_matrices: array<mat3x3<f32>>;
 
@@ -60,10 +58,6 @@
             rotation: vec4f,
             normal: vec4f,  // w component is the base alpha / opacity 
         };
-
-        // struct SphericalHarmonics {
-        //     coeffs: array<vec3<f32>, 16>
-        // };
 
         struct VSOut {
             @builtin(position) position: vec4f,
@@ -428,12 +422,6 @@
             return true;
         }
         
-
-        fn blend_alpha(accumulatedAlpha: f32, newAlpha: f32) -> f32 {
-            // Implementing a standard over operator for alpha compositing
-            return accumulatedAlpha + newAlpha * (1.0 - accumulatedAlpha);
-        }
-
         const SH_C0 = 0.28209479177387814;
         const SH_C1 = 0.4886025119029199;
         const SH_C2 = array(
@@ -580,14 +568,15 @@
             //     }
             // }
             
-            var accumulated_color: vec3f;
+            var accumulated_color: vec3f = BACKGROUNDCOLOR.rgb;
             var accumulated_alpha: f32;
 
+            // Alpha blending
             for (var i: i32 = n_intersections - 1; 0 <= i; i--) {
                 let hit = intersections[i];
                 let pixel_alpha = calculate_alpha(hit);
                 let base_alpha = hit.material.color.a;
-                let total_alpha = base_alpha; // + pixel_alpha
+                let total_alpha = min(pixel_alpha + base_alpha, 1);
 
                 accumulated_color = accumulated_color * (1.0 - total_alpha) + (hit.material.color.rgb * total_alpha);
                 accumulated_alpha = accumulated_alpha + total_alpha * (1.0 - accumulated_alpha);
