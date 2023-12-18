@@ -72,7 +72,7 @@ function rearrangeRGB(rrggbb) {
  * read the rest of the file
  *  
  * @param {*} headerString the raw string of the header
- * @param {*} maxVerts the max number of vertices to read - some files are trillions, we cant read that many sadly
+ * @param {*} maxVerts the max number of vertices to read (500000 can fit in a single buffer)- some files are trillions, we cant read that many sadly. 
  * @returns 
  */
 function parseHeader(headerString, maxVerts = 500000) {
