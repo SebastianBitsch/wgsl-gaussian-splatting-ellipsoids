@@ -15,10 +15,31 @@ var dragging = false;
 var lastMouseX = -1;
 var lastMouseY = -1;
 
-// Camera positions for different scenes
-// let camera = {"camera_const": 2.5, "camera_position": [2, 20, 3, 0], "camera_look_point" : [0, 0, 0, 0], "camera_up_vector": [0.0, 0.0, 1.0, 0]};
-let camera = {"camera_const": .5, "camera_position": [-3.222086,-0.121226,-4.121659, 0], "camera_look_point" : [-3.062380,-0.191665,-3.137010, 0], "camera_up_vector": [-0.011754, -0.997516, -0.069454, 0]};
 
+// When going from rotation matrix to camera basis
+//  - Third col is forward
+//  - Second col is up, negate to turn right side up
+// img 301
+let camera1 = {
+    "camera_const": 1, 
+    "camera_position": [-3.222086,-0.121226,-4.121659, 0], 
+    "camera_look_point" : [-3.062380,-0.191665,-3.137010, 0], 
+    "camera_up_vector": [-0.011754, -0.997516, -0.069454, 0]
+};
+// img 30
+let camera2 = {
+    "camera_const": 1, 
+    "camera_position": [1.47262563, -0.19514904, -2.24352285, 0], 
+    "camera_look_point" : [-0.7850281427424773, -0.008068184998965968, 0.6194075552438143, 0], 
+    "camera_up_vector": [0.042292231840881954, -0.9982801336144452, -0.04059731464817187, 0]
+};
+// img 46
+let camera3 = {
+    "camera_const": 1, 
+    "camera_position": [4.1361417825815465, -0.3367029601030584, -1.111293539303772, 0], 
+    "camera_look_point" : [-0.7608093251646336, 0.05902557363325378, 0.6462856585131684, 0], 
+    "camera_up_vector": [-0.0020018479234047387, -0.9960639931668536, 0.08861441260536376, 0]
+};
 
 var uniforms = {
     "eps" : 1e-2,
@@ -39,7 +60,7 @@ var drawingInfo;
 var bindGroup;
 
 // Add camera to uniforms, swap camera depending on scene. Camera should be part of scene description i think
-uniforms = Object.assign({}, uniforms, camera);
+uniforms = Object.assign({}, uniforms, camera1);
 
 function setupRenderTextures(device, canvas) {
     var textures = new Object();
