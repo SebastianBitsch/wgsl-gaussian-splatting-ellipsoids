@@ -68,28 +68,24 @@ function rearrangeRGB(rrggbb) {
     return rgbrgb;
 }
 
-function parseHeader(headerString) {
-
+/**Function for parsing a (kinda specific) kind of .ply header to extract some info used to 
+ * read the rest of the file
+ *  
+ * @param {*} headerString the raw string of the header
+ * @param {*} maxVerts the max number of vertices to read - some files are trillions, we cant read that many sadly
+ * @returns 
+ */
+function parseHeader(headerString, maxVerts = 500000) {
     let headerArray = headerString.split("\n");
 
     let nVertices = parseInt(headerArray.find(e => e.includes("element vertex")).split(" ")[2]); // TODO: not the most elegant solution
-    //console.log(nVertices);
-    nVertices = 100000; // TODO: temporary to avoid hitting max buffer size and making loading faster 
+    nVertices = Math.min(nVertices, maxVerts);
 
     let properties = headerArray.filter(e => e.includes("property"));
-    // NB: f_dc_ are not included in count or degree calculation - but is used when getting the coefficients
-    // let nCoeffsPerColor = headerString.Count("f_rest_") / 3;            // 15
-    // let nCoeffsPerColor = headerString.Count("f_") / 3;            // 16
-    // console.assert(nCoeffsPerColor % 3 == 0); // We should have RGB values i.e. 3
-    // let sphericalHarmonicsDegree = Math.sqrt(nCoeffsPerColor + 1) - 1;  // 3
-    // let nShCoeffsTable = {0 : 1, 1: 4, 2: 9, 3: 16};                    // Pretty sure this isnt neccessary, just use nCoeffsPerColor + 1
-    // let nShCoeffs = nShCoeffsTable[sphericalHarmonicsDegree];           // 16 (1 extra for 3 x fc_dc)
-    // let nShCoeffs = nCoeffsPerColor;                                // 16 (1 extra for 3 x fc_dc)
-    
+
     // TODO: all this could be a single for loop but..
     let shPropertyIndices = properties.flatMap((text, i) => text.includes("f_") ? i : []);
     let vertexPropertyIndices = properties.flatMap((text, i) => !text.includes("f_") ? i : []);
-    let vertexPosPropertyIndices = properties.flatMap((text, i) => text.includes("float x") || text.includes("float y") || text.includes("float z") ? i : []);
     
     return {
         nVertices           : nVertices,
@@ -97,8 +93,7 @@ function parseHeader(headerString) {
         propertyNames       : properties, // TODO: could do everything with this tbh
         // nShCoeffs           : nShCoeffs,
         shPropertyIndices   : shPropertyIndices,
-        vertexPropertyIndices : vertexPropertyIndices,
-        vertexPosPropertyIndices : vertexPosPropertyIndices
+        vertexPropertyIndices : vertexPropertyIndices
     }
 }
 
@@ -134,6 +129,7 @@ function Quaternion2RotMatrix(q) {
 }
 
 function getPrincipalAxes(scaleVector, rotationQuaternion) {
+    // https://en.wikipedia.org/wiki/Ellipsoid see "principal axes"
     // Unrotated axes
     let r1 = [scaleVector[0], 0, 0];
     let r2 = [0, scaleVector[1], 0];
@@ -151,25 +147,29 @@ function getPrincipalAxes(scaleVector, rotationQuaternion) {
     };
 }
 
-// Implement the rotateVector function based on your quaternion to matrix conversion
 function rotateVector(quaternion, vector) {
-    // Convert quaternion to rotation matrix
     let rotationMatrix = Quaternion2RotMatrix(quaternion);
     return mult(rotationMatrix, vector);
 }
-
 
 function CalculateEllipsoidBounds(positionVector, scaleVector, rotationVector) {
     P = getPrincipalAxes(scaleVector, rotationVector);
     
     // https://math.stackexchange.com/a/2348806
-    x = Math.sqrt(P.r1[0]*P.r1[0] + P.r1[1]*P.r1[1] + P.r1[2]*P.r1[2])
-    y = Math.sqrt(P.r2[0]*P.r2[0] + P.r2[1]*P.r2[1] + P.r2[2]*P.r2[2])
-    z = Math.sqrt(P.r3[0]*P.r3[0] + P.r3[1]*P.r3[1] + P.r3[2]*P.r3[2])
-  	
+    x = Math.sqrt(P.r1[0]*P.r1[0] + P.r1[1]*P.r1[1] + P.r1[2]*P.r1[2]);
+    y = Math.sqrt(P.r2[0]*P.r2[0] + P.r2[1]*P.r2[1] + P.r2[2]*P.r2[2]);
+    z = Math.sqrt(P.r3[0]*P.r3[0] + P.r3[1]*P.r3[1] + P.r3[2]*P.r3[2]);
+
+    xmin = positionVector[0] - x;
+    xmax = positionVector[0] + x;
+    ymin = positionVector[1] - y;
+    ymax = positionVector[1] + y;
+    zmin = positionVector[2] - z;
+    zmax = positionVector[2] + z;
+
     return {
-        min: subtract(positionVector, [x,y,z]),
-        max: add(positionVector, [x,y,z])
+        min: [xmin, ymin, zmin],
+        max: [xmax, ymax, zmax]
     }
 }
 
@@ -213,6 +213,8 @@ function parseBody(header, bodyBuffer) {
     const sphericalHarmonics = new Float32Array(header.nVertices * 64); 
     const invCovMatrices = new Float32Array(header.nVertices * pad(9)); // Cotains 3x3 matrices 
 
+    var n = 0; // n_vertices
+
     // Parse the vertices, split on whether they are are vertex data or sh data
     for (let i = 0; i < header.nVertices; i++) {
         let vertexSlice = new Float32Array(bodyBuffer, i * vertexSize, header.nProperties);
@@ -222,7 +224,6 @@ function parseBody(header, bodyBuffer) {
         var normal = [];
         var opacity = 1.0;
         
-        // TODO: Should be a single for loop for extra speed
         for (let j = 0; j < header.nProperties; j++) {
 
             // x,y,z,nx,ny,nz,opacity,scale,rot
@@ -245,24 +246,23 @@ function parseBody(header, bodyBuffer) {
                 }
             }
         }
+        // Remove small vertices, i.e. they are too thin or just tiny
+        let eps = 0.001;
+        if (scale[0] < eps || scale[1] < eps || scale[2] < eps) {
+            continue;
+        }
+
         // Add padding
         position.push(0);
         scale.push(0);
         normal.push(opacity);
-
-        if (i == 0) {
-            console.log(position)
-            console.log(rotation);
-            console.log(scale);
-            console.log(InvCovarianceMatrix3d(scale, rotation));
-        }
         
-        vertices.set(position,      i * 16);
-        vertices.set(scale,     4 + i * 16);
-        vertices.set(rotation,  8 + i * 16);
-        vertices.set(normal,   12 + i * 16);
+        vertices.set(position,      n * 16);
+        vertices.set(scale,     4 + n * 16);
+        vertices.set(rotation,  8 + n * 16);
+        vertices.set(normal,   12 + n * 16);
         vertexPositions.push(position.slice(0,3));
-        invCovMatrices.set(AddFourthDimension(flatten(InvCovarianceMatrix3d(scale, rotation))), i * pad(9));
+        invCovMatrices.set(AddFourthDimension(flatten(InvCovarianceMatrix3d(scale, rotation))), n * pad(9));
 
         // TODO: This not exactly nice, and should be cleaned up
         // Set the first set of spherical harmonics
@@ -271,7 +271,7 @@ function parseBody(header, bodyBuffer) {
                 vertexSlice[header.shPropertyIndices[0]],
                 vertexSlice[header.shPropertyIndices[1]],
                 vertexSlice[header.shPropertyIndices[2]],
-            ]), i * 64
+            ]), n * 64
         );
         for (let k = 0; k < 15; ++k) {
             let sh = [0,0,0];
@@ -279,12 +279,14 @@ function parseBody(header, bodyBuffer) {
                 sh[rgb] = vertexSlice[header.shPropertyIndices[rgb * 15 + k + 3]];
             }
             sphericalHarmonics.set(
-                AddFourthDimension(sh), 4 + (k*4) + (i * 64)
+                AddFourthDimension(sh), 4 + (k*4) + (n * 64)
             );
         }
+        n += 1;
     }
-
+    console.log("n vertices: ", n);
     return {
+        n_vertices: n,
         vertices : vertices,
         vertexPositions: vertexPositions,
         sphericalHarmonics : sphericalHarmonics,
@@ -375,13 +377,13 @@ function displayContents(contents) {
 // TODO: Not the nicest implementation - should also be able to log fps to file etc.
 var lastFrameTime = 0.0;
 var currentFrameTime = 0.0;
-function updateFPSCounter(e, setNa = false) {
+function updateFPSCounter(e, showfps) {
     currentFrameTime = performance.now();
 
-    if (setNa) {
-        e.innerHTML = "FPS: --";
-    } else {
+    if (showfps) {
         e.innerHTML = "FPS: " + parseInt(1000.0 / (currentFrameTime - lastFrameTime));
+    } else {
+        e.innerHTML = "FPS: --";
     }
     lastFrameTime = currentFrameTime;
 }
