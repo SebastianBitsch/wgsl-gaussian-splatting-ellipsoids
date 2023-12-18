@@ -156,9 +156,9 @@ function CalculateEllipsoidBounds(positionVector, scaleVector, rotationVector) {
     P = getPrincipalAxes(scaleVector, rotationVector);
     
     // https://math.stackexchange.com/a/2348806
-    x = Math.sqrt(P.r1[0]*P.r1[0] + P.r1[1]*P.r1[1] + P.r1[2]*P.r1[2]);
-    y = Math.sqrt(P.r2[0]*P.r2[0] + P.r2[1]*P.r2[1] + P.r2[2]*P.r2[2]);
-    z = Math.sqrt(P.r3[0]*P.r3[0] + P.r3[1]*P.r3[1] + P.r3[2]*P.r3[2]);
+    x = Math.sqrt(P.r1[0]*P.r1[0] + P.r1[1]*P.r1[1] + P.r1[2]*P.r1[2]) * 0.5;
+    y = Math.sqrt(P.r2[0]*P.r2[0] + P.r2[1]*P.r2[1] + P.r2[2]*P.r2[2]) * 0.5;
+    z = Math.sqrt(P.r3[0]*P.r3[0] + P.r3[1]*P.r3[1] + P.r3[2]*P.r3[2]) * 0.5;
 
     xmin = positionVector[0] - x;
     xmax = positionVector[0] + x;
