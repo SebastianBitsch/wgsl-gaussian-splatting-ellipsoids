@@ -90,7 +90,8 @@
             shader: u32,
             entry: vec3f,
             exit: vec3f,
-            gaussian: Gaussian
+            gaussian: Gaussian,         // TODO: should really just store an index here instead of this
+            inv_cov_mat: mat3x3<f32>    // TODO: should really just store an index here instead of this
         };
 
         struct Sphere {
@@ -277,27 +278,45 @@
             return rotation_matrix * v;
         }
 
-
-        fn density_at_point(hit: HitInfo, inv_cov_mat: mat3x3<f32>) -> f32 {
-            // Transform the point into the Gaussian's local space
-            let localPoint = inv_cov_mat * (hit.position - hit.gaussian.position);
-
-            // Compute the Gaussian density
-            let density = exp(-0.5 * dot(localPoint, localPoint));
-            return density;
-            // return exp(-0.5 * transpose(hit.position))
-        }
+        // fn calculate_alpha(hit: HitInfo) -> f32 {
+        //     let midPoint: vec3f = (hit.entry + hit.exit) * 0.5;
+        //     let distanceFromCenter: f32 = length(midPoint - hit.gaussian.position);
+        //     let sigma: f32 = length(hit.gaussian.scale) / 2.0;  // Assuming uniform scale for simplicity
+        //     let alphaAtMidPoint: f32 = exp(-distanceFromCenter * distanceFromCenter / (2.0 * sigma * sigma));
+            
+        //     let pathLength: f32 = length(hit.exit - hit.entry);
+        //     let totalAlpha: f32 = alphaAtMidPoint * pathLength;  // Approximate total alpha
+        //     return totalAlpha;
+        // }
 
         fn calculate_alpha(hit: HitInfo) -> f32 {
-            let midPoint: vec3f = (hit.entry + hit.exit) * 0.5;
-            let distanceFromCenter: f32 = length(midPoint - hit.gaussian.position);
-            let sigma: f32 = length(hit.gaussian.scale) / 2.0;  // Assuming uniform scale for simplicity
-            let alphaAtMidPoint: f32 = exp(-distanceFromCenter * distanceFromCenter / (2.0 * sigma * sigma));
-            
-            let pathLength: f32 = length(hit.exit - hit.entry);
-            let totalAlpha: f32 = alphaAtMidPoint * pathLength;  // Approximate total alpha
-            return totalAlpha;
+            let midPoint: vec3<f32> = (hit.entry + hit.exit) * 0.5;
+            let offset: vec3<f32> = midPoint - hit.gaussian.position;
+
+            // Rotate the offset to align with the Gaussian's orientation
+            let rotatedOffset = hit.inv_cov_mat * offset;
+
+            // Calculate the squared Mahalanobis distance, which is the power in the Gaussian formula
+            let mahalanobisDistanceSquared = dot(rotatedOffset, offset);
+            let power = -0.5 * mahalanobisDistanceSquared;
+
+            let alpha = min(0.99, hit.gaussian.normal.a * exp(power));
+            return alpha;
         }
+
+
+        // fn calculate_alpha(hit: HitInfo) -> f32 {
+        //     let midPoint: vec3<f32> = (hit.entry + hit.exit) * 0.5;
+        //     let distanceFromCenter: f32 = length(midPoint - hit.gaussian.position);
+            
+        //     // Assuming an isotropic Gaussian
+        //     let sigma: f32 = length(hit.gaussian.scale) / sqrt(3.0); // Simplified uniform scale
+        //     let power = -distanceFromCenter * distanceFromCenter / (2.0 * sigma * sigma);
+
+        //     let alpha = min(0.99, hit.gaussian.normal.a * exp(power));
+        //     return alpha;
+        // }
+
 
         fn inverseRotateVector(v: vec3<f32>, q: vec4<f32>) -> vec3<f32> {
             let rotationMatrix = quaternion_to_matrix(q);
@@ -366,6 +385,7 @@
             }
 
             (*hit).gaussian = gaussian;
+            (*hit).inv_cov_mat = mat3x3(1,0,0,0,1,0,0,0,1);
             (*hit).entry = (*ray).origin + (*ray).direction * min(t1,t2);
             (*hit).exit = (*ray).origin + (*ray).direction * max(t1,t2);
             (*hit).normal = calculate_rotated_normal((*hit).entry, gaussian);
@@ -411,6 +431,7 @@
             }
 
             (*hit).gaussian = gaussian;
+            (*hit).inv_cov_mat = inv_covariance_matrices[id];
             (*hit).entry = (*ray).origin + (*ray).direction * min(t1,t2);
             (*hit).exit = (*ray).origin + (*ray).direction * max(t1,t2);
             // (*hit).normal = calculate_rotated_normal((*hit).entry, gaussian);
@@ -480,7 +501,7 @@
             // unconditional
             result = result + 0.5;
 
-            return max(vec4f(result,1), vec4f(0.));
+            return max(vec4f(result, 1), vec4f(0, 0, 0, 1));
         }
 
         fn intersect_min_max(ray: ptr<function, Ray>) -> bool {
@@ -503,23 +524,23 @@
             let default_material: Material = Material();
             var red = default_material;
             var blue = default_material;
-            red.color = vec4f(.5, 0.0, 0.0, 0.1);
-            blue.color = vec4f(0.0, 0.0, .5, 0.5);
+            red.color = vec4f(1.0, 0.0, 0.0, 0.8);
+            blue.color = vec4f(0.0, 0.0, 1, 0.4);
 
             var redg: Gaussian = Gaussian(
                 vec3f(0,0,0),   // pos
                 vec3f(1,1,3),   // scale
-                vec4f(0.7,0,0,0.3),    // rotation
-                vec4f(1,1,1, 0),   // normal
+                vec4f(0,0,0,1),    // rotation
+                vec4f(1,1,1, .8),   // normal
             );
             var blueg: Gaussian = Gaussian(
-                vec3f(0,0,0),   // pos
-                vec3f(.9,.9,3),   // scale
-                vec4f(.7,0,0,0.3),    // rotation
-                vec4f(1,1,1, 0),   // normal
+                vec3f(0,1,0),   // pos
+                vec3f(2,2,2),   // scale
+                vec4f(0,0,0,1),    // rotation
+                vec4f(1,1,1,.2),   // normal
             );
-            var g = array<Gaussian, 2>(redg,blueg);
-            var m = array<Material, 2>(red,blue);
+            var g = array<Gaussian, 2>(redg, blueg);
+            var m = array<Material, 2>(red, blue);
             var intersections = array<HitInfo, MAXINTERSECTIONS>();
             var n_intersections: i32 = 0;
             
@@ -574,9 +595,7 @@
             // Alpha blending
             for (var i: i32 = n_intersections - 1; 0 <= i; i--) {
                 let hit = intersections[i];
-                let pixel_alpha = calculate_alpha(hit);
-                let base_alpha = hit.material.color.a;
-                let total_alpha = min(pixel_alpha + base_alpha, 1);
+                let total_alpha = calculate_alpha(hit); // max(pixel_alpha, base_alpha);// min(pixel_alpha + base_alpha, 1.0);
 
                 accumulated_color = accumulated_color * (1.0 - total_alpha) + (hit.material.color.rgb * total_alpha);
                 accumulated_alpha = accumulated_alpha + total_alpha * (1.0 - accumulated_alpha);
