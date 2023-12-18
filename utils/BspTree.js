@@ -154,11 +154,11 @@ function subdivide_node(node, bbox, level, objects)
 function build_bsp_tree(verticesArray, device, buffers) {
     var objects = [];
     for (var i = 0; i < verticesArray.length / 16; ++i) {
-        let position    = Array.from(verticesArray.slice(i * 16, i * 16 + 3));            // position
-        let scale       = Array.from(verticesArray.slice(i * 16 + 4, i * 16 + 4 + 3));     // scale
-        let rotation    = Array.from(verticesArray.slice(i * 16 + 8, i * 16 + 8 + 4));    // rotation
-        let normal      = Array.from(verticesArray.slice(i * 16 + 12, i * 16 + 12 + 3));  // normal
-        let opacity      = Array.from(verticesArray.slice(i * 16 + 15, i * 16 + 16));  // opacity
+        let position    = Array.from(verticesArray.slice(i * 16, i * 16 + 3));              // position
+        let scale       = Array.from(verticesArray.slice(i * 16 + 4, i * 16 + 4 + 3));      // scale
+        let rotation    = Array.from(verticesArray.slice(i * 16 + 8, i * 16 + 8 + 4));      // rotation
+        // let normal      = Array.from(verticesArray.slice(i * 16 + 12, i * 16 + 12 + 3));    // normal
+        // let opacity     = Array.from(verticesArray.slice(i * 16 + 15, i * 16 + 16));        // opacity
 
         let bounds = CalculateEllipsoidBounds(position, scale, rotation);
         
