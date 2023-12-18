@@ -73,11 +73,11 @@ function configureBindGroup(device, drawingInfo, pipeline, textures) {
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
     });
 
-    let vertexOrdering = argSortByDistanceTo(drawingInfo.vertexPositions, uniforms.camera_position);
-    const vertexOrderingBuffer = device.createBuffer({
-        size: vertexOrdering.byteLength,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
-    })
+    // let vertexOrdering = argSortByDistanceTo(drawingInfo.vertexPositions, uniforms.camera_position);
+    // const vertexOrderingBuffer = device.createBuffer({
+    //     size: vertexOrdering.byteLength,
+    //     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    // })
 
     const sphericalHarmonicsBuffer = device.createBuffer({
         size: drawingInfo.sphericalHarmonics.byteLength,
@@ -91,7 +91,7 @@ function configureBindGroup(device, drawingInfo, pipeline, textures) {
 
     device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
     device.queue.writeBuffer(verticesBuffer, 0, drawingInfo.vertices);
-    device.queue.writeBuffer(vertexOrderingBuffer, 0, vertexOrdering);
+    // device.queue.writeBuffer(vertexOrderingBuffer, 0, vertexOrdering);
     device.queue.writeBuffer(sphericalHarmonicsBuffer, 0, drawingInfo.sphericalHarmonics);
     device.queue.writeBuffer(invCovMatricesBuffer, 0, drawingInfo.invCovMatrices);
 
@@ -101,13 +101,13 @@ function configureBindGroup(device, drawingInfo, pipeline, textures) {
             { binding: 0, resource: { buffer: uniformBuffer }},
             { binding: 1, resource: textures.renderDst.createView() },
             { binding: 2, resource: { buffer: verticesBuffer }},
-            { binding: 3, resource: { buffer: vertexOrderingBuffer }},
-            { binding: 4, resource: { buffer: sphericalHarmonicsBuffer }},
-            { binding: 5, resource: { buffer: invCovMatricesBuffer }},
-            { binding: 6, resource: { buffer: buffers.aabb }},
-            { binding: 7, resource: { buffer: buffers.treeIds }},
-            { binding: 8, resource: { buffer: buffers.bspTree }},
-            { binding: 9, resource: { buffer: buffers.bspPlanes }}
+            // { binding: 3, resource: { buffer: vertexOrderingBuffer }},
+            { binding: 3, resource: { buffer: sphericalHarmonicsBuffer }},
+            { binding: 4, resource: { buffer: invCovMatricesBuffer }},
+            { binding: 5, resource: { buffer: buffers.aabb }},
+            { binding: 6, resource: { buffer: buffers.treeIds }},
+            { binding: 7, resource: { buffer: buffers.bspTree }},
+            { binding: 8, resource: { buffer: buffers.bspPlanes }}
         ],
     });
 
@@ -140,11 +140,7 @@ function render(device, context, textures, bindGroup, pipeline) {
 }
 
 function animate(device, context, pipeline, bindGroup, textures) {
-    if (doProgressiveUpdating) {
-        updateFPSCounter(fpsLabel);
-    } else {
-        updateFPSCounter(fpsLabel, false);
-    }
+    updateFPSCounter(fpsLabel, doProgressiveUpdating);
 
     // Render the scene
     // bindGroup = configureBindGroup(device, a, pipeline, textures); - no problem writing the buffer, very fast 
@@ -163,7 +159,6 @@ function animate(device, context, pipeline, bindGroup, textures) {
     // Check for termination flag
     if (!doProgressiveUpdating) {
         totalRuntime += performance.now() - currentRuntime;
-        console.log(`%cDone sampling%c \n| Total Runtime:\t${formatTime(totalRuntime)} \n| Total frames:\t\t${uniforms['frame_number']} \n| Average time per frame:\t${(uniforms['frame_number'] / totalRuntime).toFixed(3)} ms`, "font-weight: bold", "font-weight: normal");
         return;
     }
 
@@ -182,7 +177,6 @@ window.onload = async function () {
         document.write("Error: Browser doesn't support WebGPU. Use Chrome.");
         return;
     }
-    // ------------- Do setup -------------
     const adapter = await gpu.requestAdapter();
     if (!adapter) {
         document.write("Error: No available WebGPU adapters.");
@@ -225,6 +219,7 @@ window.onload = async function () {
 
     let textures = setupRenderTextures(device, canvas);
     
+    // Update canvas uniforms
     uniforms["canvas_width"] = canvas.width;
     uniforms["canvas_height"] = canvas.height;
     uniforms["aspect_ratio"] = canvas.width / canvas.height;
@@ -235,9 +230,6 @@ window.onload = async function () {
         const [headerString, bodyBuffer] = splitHeaderAndBody(response);
         const header = parseHeader(headerString);
         const drawingInfo = parseBody(header, bodyBuffer);
-
-        a = drawingInfo;
-        // displayContents(headerString);
         
         bindGroup = configureBindGroup(device, drawingInfo, pipeline, textures);
 
