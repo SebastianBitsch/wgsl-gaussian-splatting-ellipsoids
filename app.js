@@ -8,6 +8,7 @@ var doProgressiveUpdating = false;
 var totalRuntime = null;
 var currentRuntime = null;
 var fpsLabel;
+var loadingText;
 
 // Camera movement variables
 var cameraSensitivity = 10;
@@ -84,7 +85,7 @@ let camera7 = {
 let camera8 = {
     "camera_const": 2, 
     "camera_position": [1.916728395625472, 0.2651834767479494, -2.5546570572338316, 0], 
-    "camera_look_point" : [-0.48370728531411106, 0.35259430458321367, 0.8010646156893545, 0], 
+    "camera_look_point" : [0,1.5,1, 0], 
     "camera_up_vector": [-0.5391969607143274, -0.8409985466968951, 0.044587913274138934, 0]
 };
 
@@ -93,9 +94,15 @@ let camera8 = {
 let camera9 = {
     "camera_const": 2, 
     "camera_position": [0.6511658240697626, 0.6133297590429543, -0.043402685513086466, 0], 
-    "camera_look_point" : [0.8195881182564873, 0.5317897406331737, 0.21324865338400573, 0], 
+    "camera_look_point" : [0,0,0, 0], 
     "camera_up_vector": [0.572201079458985, -0.7406430255068439, -0.3521843742048202, 0]
 };
+// let camera9 = {
+//     "camera_const": 2, 
+//     "camera_position": [0.6511658240697626, 0.6133297590429543, -0.043402685513086466, 0], 
+//     "camera_look_point" : [0.8195881182564873, 0.5317897406331737, 0.21324865338400573, 0], 
+//     "camera_up_vector": [0,0,1, 0]
+// };
 
 
 
@@ -119,7 +126,7 @@ var drawingInfo;
 var bindGroup;
 
 // Add camera to uniforms, swap camera depending on scene. Camera should be part of scene description i think
-uniforms = Object.assign({}, uniforms, camera1);
+uniforms = Object.assign({}, uniforms, camera9);
 
 function setupRenderTextures(device, canvas) {
     var textures = new Object();
@@ -242,6 +249,9 @@ function animate(device, context, pipeline, bindGroup, textures) {
         return;
     }
 
+    // showLoadingText(loadingText, false);
+    hideLoadingText();
+
     // requestAnimationFrame cant pass arguments to callback, this is a cheeky workaround
     requestAnimationFrame(() => {
         animate(device, context, pipeline, bindGroup, textures);
@@ -276,8 +286,6 @@ window.onload = async function () {
         format: canvasFormat
     });
 
-    fpsLabel = document.getElementById("fps-label");
-
     const pipeline = device.createRenderPipeline({
         layout: "auto",
         vertex: {
@@ -305,8 +313,13 @@ window.onload = async function () {
     uniforms["aspect_ratio"] = canvas.width / canvas.height;
     document.getElementById("zoom-slider").value = uniforms.camera_const;
     document.getElementById("zoom-label").innerHTML = "Zoom: " + uniforms.camera_const;
+    fpsLabel = document.getElementById("fps-label");
+    loadingText = document.getElementById("loading-text");
 
-    readFile("data/train.ply", function(response) {
+    // Good for local development, requires chrome in unsafe mode: 
+    // > open -a Google\ Chrome --args --allow-file-access-from-files
+    readLocalFile("data/playroom.ply", function(response) {
+        console.log("from local", response);
         const [headerString, bodyBuffer] = splitHeaderAndBody(response);
         const header = parseHeader(headerString);
         const drawingInfo = parseBody(header, bodyBuffer);
@@ -317,6 +330,23 @@ window.onload = async function () {
             animate(device, context, pipeline, bindGroup, textures);
         });
     });
+
+    // document.getElementById('file-input').addEventListener('change', function() {
+    //     readInputFile.call(this, function(response) {
+    //         showLoadingText();
+    //         console.log("Read file", response);
+    //         const [headerString, bodyBuffer] = splitHeaderAndBody(response);
+    //         const header = parseHeader(headerString);
+    //         const drawingInfo = parseBody(header, bodyBuffer);
+            
+    //         bindGroup = configureBindGroup(device, drawingInfo, pipeline, textures);
+
+    //         requestAnimationFrame(() => {
+    //             animate(device, context, pipeline, bindGroup, textures);
+    //         });
+    //     });
+    // });
+    
 
     /* Update zoom */
     window.onZoomSliderChange = function(level) {

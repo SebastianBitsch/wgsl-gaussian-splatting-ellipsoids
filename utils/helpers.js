@@ -156,9 +156,9 @@ function CalculateEllipsoidBounds(positionVector, scaleVector, rotationVector) {
     P = getPrincipalAxes(scaleVector, rotationVector);
     
     // https://math.stackexchange.com/a/2348806
-    x = Math.sqrt(P.r1[0]*P.r1[0] + P.r1[1]*P.r1[1] + P.r1[2]*P.r1[2]);
-    y = Math.sqrt(P.r2[0]*P.r2[0] + P.r2[1]*P.r2[1] + P.r2[2]*P.r2[2]);
-    z = Math.sqrt(P.r3[0]*P.r3[0] + P.r3[1]*P.r3[1] + P.r3[2]*P.r3[2]);
+    x = Math.sqrt(P.r1[0]*P.r1[0] + P.r1[1]*P.r1[1] + P.r1[2]*P.r1[2]) * 0.5;
+    y = Math.sqrt(P.r2[0]*P.r2[0] + P.r2[1]*P.r2[1] + P.r2[2]*P.r2[2]) * 0.5;
+    z = Math.sqrt(P.r3[0]*P.r3[0] + P.r3[1]*P.r3[1] + P.r3[2]*P.r3[2]) * 0.5;
 
     xmin = positionVector[0] - x;
     xmax = positionVector[0] + x;
@@ -323,8 +323,34 @@ function argSortByDistanceTo(vertexPositions, refPoint) {
     );
 }
 
+function readInputFile(callback) {
+    if (this.files.length === 0) {
+        console.log("No file selected");
+        return;
+    }
 
-function readFile(fileName, callback) {
+    var file = this.files[0]; // Get the first file in the file list
+    console.log(file); // Log the file object
+
+    var reader = new FileReader(); // Create a FileReader object
+
+    // Define what happens on successful data read
+    reader.onload = function(event) {
+        if (typeof(callback) == "function") {
+            callback(event.target.result); // Call the callback function with the file content
+        }
+    };
+
+    // Define what happens in case of error
+    reader.onerror = function() {
+        console.error("File could not be read! Code " + reader.error.code);
+    };
+
+    // Read file as an ArrayBuffer, similar to how XMLHttpRequest was used
+    reader.readAsArrayBuffer(file);
+}
+
+function readLocalFile(fileName, callback) {
     var request = new XMLHttpRequest(); 
     request.open('GET', fileName, true); // Create a request to get file 
 
@@ -386,4 +412,14 @@ function updateFPSCounter(e, showfps) {
         e.innerHTML = "FPS: --";
     }
     lastFrameTime = currentFrameTime;
+}
+
+function showLoadingText() {
+    console.log("showing");
+    e.style.display = 'block'; // Show the element
+}
+
+function hideLoadingText() {
+    console.log("hiding");
+    e.style.display = 'none'; // Hide the element
 }

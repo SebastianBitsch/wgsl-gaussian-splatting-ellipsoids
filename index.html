@@ -413,7 +413,7 @@
             (*hit).gaussian = gaussian;
             (*hit).entry = (*ray).origin + (*ray).direction * min(t1,t2);
             (*hit).exit = (*ray).origin + (*ray).direction * max(t1,t2);
-            // (*hit).normal = calculate_rotated_normal((*hit).entry, gaussian);
+            (*hit).normal = calculate_rotated_normal((*hit).entry, gaussian);
             (*hit).dist = min(t1,t2);
             (*hit).material = Material();
             (*hit).material.color = compute_color_from_sh((*hit).entry, spherical_harmonics);
@@ -650,6 +650,7 @@
     <input type="file" id="file-input" /><br>
     <pre id="file-content"></pre>
 
+    <p style="display: none;" id="loading-text"> ... Please wait ... </p>
     <canvas id="webgpu-canvas" width=512 height=512>
         Error: Browser doesn't support HTML5 canvas
     </canvas>
