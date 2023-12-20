@@ -530,10 +530,8 @@
         fn main_fs(@builtin(position) fragcoord: vec4f, @location(0) coords: vec2f) -> FSOut {
             let launch_idx: u32 = u32(fragcoord.y) * u32(uniforms.canvas_width) + u32(fragcoord.x); 
             var seed: u32 = tea(launch_idx, u32(uniforms.frame_number));
-            let jitter: vec2f = vec2f(random(&seed), random(&seed)) / f32(uniforms.canvas_height);
-            let jittered_coords = coords + jitter;
-            
-            let uv = vec2f(jittered_coords.x * uniforms.aspect_ratio * 0.5, jittered_coords.y * 0.5);
+
+            let uv = vec2f(coords.x * uniforms.aspect_ratio * 0.5, coords.y * 0.5);
 
             var ray = get_camera_ray(uv);
             var shaded_result: vec4f = intersect_scene(&ray);
