@@ -74,7 +74,7 @@ function rearrangeRGB(rrggbb) {
  * @param {*} maxVerts the max number of vertices to read (500000 can fit in a single buffer)- most files are millions, we cant read that many sadly. 
  * @returns 
  */
-function parseHeader(headerString, maxVerts = 500000) {
+function parseHeader(headerString, maxVerts = 50000) {
     let headerArray = headerString.split("\n");
 
     let nVertices = parseInt(headerArray.find(e => e.includes("element vertex")).split(" ")[2]); // TODO: not the most elegant solution
@@ -446,9 +446,9 @@ function updateFPSCounter(e, showfps) {
 }
 
 function showLoadingText() {
-    document.getElementById("loading-text").style.visibility = 'visible'; // Show the element
+    document.getElementById("loading-text").style.visibility = 'visible';
 }
 
 function hideLoadingText(e) {
-    e.style.visibility = 'hidden'; // Hide the element
+    document.getElementById("loading-text").style.visibility = 'hidden';
 }

@@ -6,7 +6,6 @@ var doProgressiveUpdating = false;
 var totalRuntime = null;
 var currentRuntime = null;
 var fpsLabel;
-var loadingText;
 
 // Camera movement variables
 var cameraSensitivity = 10;
@@ -156,8 +155,6 @@ function animate(device, context, pipeline, bindGroup, textures) {
         return;
     }
 
-    hideLoadingText(loadingText);
-
     // requestAnimationFrame cant pass arguments to callback, this is a cheeky workaround
     requestAnimationFrame(() => {
         animate(device, context, pipeline, bindGroup, textures);
@@ -220,7 +217,6 @@ window.onload = async function () {
     document.getElementById("zoom-slider").value = uniforms.camera_const;
     document.getElementById("zoom-label").innerHTML = "Zoom: " + uniforms.camera_const;
     fpsLabel = document.getElementById("fps-label");
-    loadingText = document.getElementById("loading-text");
 
     // Good for local development, requires chrome in unsafe mode: 
     // > open -a Google\ Chrome --args --allow-file-access-from-files
@@ -231,7 +227,7 @@ window.onload = async function () {
         
     //     bindGroup = configureBindGroup(device, drawingInfo, pipeline, textures);
 
-    //     hideLoadingText(loadingText);
+    //     hideLoadingText();
     //     requestAnimationFrame(() => {
     //         animate(device, context, pipeline, bindGroup, textures);
     //     });
@@ -245,7 +241,8 @@ window.onload = async function () {
             const drawingInfo = parseBody(header, bodyBuffer);
             
             bindGroup = configureBindGroup(device, drawingInfo, pipeline, textures);
-
+            
+            hideLoadingText();
             requestAnimationFrame(() => {
                 animate(device, context, pipeline, bindGroup, textures);
             });
