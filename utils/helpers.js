@@ -347,7 +347,8 @@ function readInputFile(callback) {
         console.log("No file selected");
         return;
     }
-
+    showLoadingText();
+    
     var file = this.files[0]; // Get the first file in the file list
     console.log(file); // Log the file object
 

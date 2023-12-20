@@ -23,6 +23,15 @@ let camera0 = {
     "camera_look_point" : [0,0,0, 0], 
     "camera_up_vector": [0,0,1,0]
 };
+// train
+// img 301
+let camera1 = {
+    "camera_const": 1, 
+    "camera_position": [-3.222086,-0.121226,-4.121659, 0], 
+    "camera_look_point" : [-3.062380,-0.191665,-3.137010, 0], 
+    "camera_up_vector": [-0.011754, -0.997516, -0.069454, 0]
+};
+
 
 var uniforms = {
     "eps" : 1e-2,
@@ -38,7 +47,7 @@ var uniforms = {
     "camera_up_vector" : 1.0, 
 };
 // Add camera to uniforms, swap camera depending on scene. Camera should be part of scene description i think
-uniforms = Object.assign({}, uniforms, camera0);
+uniforms = Object.assign({}, uniforms, camera1);
 
 var uniformBuffer;
 var drawingInfo;
@@ -307,14 +316,14 @@ window.onload = async function () {
 
 
 // *** These are camera locations for specific scenes, the camera can be swapped in uniforms, see top of app.js*** 
-// truck
+// train
 // img 301
-let camera1 = {
-    "camera_const": 1, 
-    "camera_position": [-3.222086,-0.121226,-4.121659, 0], 
-    "camera_look_point" : [-3.062380,-0.191665,-3.137010, 0], 
-    "camera_up_vector": [-0.011754, -0.997516, -0.069454, 0]
-};
+// let camera1 = {
+//     "camera_const": 1, 
+//     "camera_position": [-3.222086,-0.121226,-4.121659, 0], 
+//     "camera_look_point" : [-3.062380,-0.191665,-3.137010, 0], 
+//     "camera_up_vector": [-0.011754, -0.997516, -0.069454, 0]
+// };
 
 // img 30
 let camera2 = {
