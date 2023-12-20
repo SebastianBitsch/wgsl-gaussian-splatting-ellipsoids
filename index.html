@@ -18,8 +18,28 @@
         
         const TMIN: f32 = 0.0;
         const TMAX: f32 = 1000.0;
-        const MAXINTERSECTIONS: i32 = 12;
+        const MAXINTERSECTIONS: i32 = 10;
         const BACKGROUNDCOLOR: vec4f = vec4f(1); // white
+
+        // See: https://en.wikipedia.org/wiki/Table_of_spherical_harmonics
+        const SH_C0 = 0.28209479177387814;
+        const SH_C1 = 0.4886025119029199;
+        const SH_C2 = array(
+            1.0925484305920792,
+            -1.0925484305920792,
+            0.31539156525252005,
+            -1.0925484305920792,
+            0.5462742152960396
+        );
+        const SH_C3 = array(
+            -0.5900435899266435,
+            2.890611442640554,
+            -0.4570457994644658,
+            0.3731763325901154,
+            -0.4570457994644658,
+            1.445305721320277,
+            -0.5900435899266435
+        );
 
         const MAX_LEVEL: u32 = 20;
         const BSP_LEAF: u32 = 3;
@@ -31,12 +51,11 @@
 
         @group(0) @binding(2) var<storage, read> gaussians: array<Gaussian>;
         @group(0) @binding(3) var<storage, read> spherical_harmonics: array<array<vec3<f32>, 16>>;
-        @group(0) @binding(4) var<storage, read> inv_covariance_matrices: array<mat3x3<f32>>;
 
-        @group(0) @binding(5) var<uniform> aabb: AABB;
-        @group(0) @binding(6) var<storage> tree_ids: array<u32>; 
-        @group(0) @binding(7) var<storage> bsp_tree: array<vec4u>;
-        @group(0) @binding(8) var<storage> bsp_planes: array<f32>;
+        @group(0) @binding(4) var<uniform> aabb: AABB;
+        @group(0) @binding(5) var<storage> tree_ids: array<u32>; 
+        @group(0) @binding(6) var<storage> bsp_tree: array<vec4u>;
+        @group(0) @binding(7) var<storage> bsp_planes: array<f32>;
 
         struct Uniforms {
             eps: f32,
@@ -87,7 +106,6 @@
             position: vec3f, 
             normal: vec3f, 
             material: Material,
-            shader: u32,
             entry: vec3f,
             exit: vec3f,
             gaussian: Gaussian
@@ -96,8 +114,7 @@
         struct Sphere {
             center: vec3f,
             radius: f32,
-            material: Material,
-            shader: u32
+            material: Material
         };
                 
         struct Material {
@@ -156,27 +173,23 @@
             let d: f32 = b * b - 4 * a * c;
             
             if (d < 0 ) { return false; }
+
             
             let t1: f32 = (-b - sqrt(d)) / (2.0 * a);
             let t2: f32 = (-b + sqrt(d)) / (2.0 * a);
-
-            // if ((*ray).t_min < t1 && t1 < (*ray).t_max) {
-            //     t = t1;
-            // } else if ((*ray).t_min < t2 && t2 < (*ray).t_max) {
-            //     t = t2;
-            // } else {
-            //     return false;
-            // }
+            var t = min(t1,t2);
+            if (t < (*ray).t_min || (*ray).t_max < t) {
+                return false;
+            }
 
             // Update the hit info
             (*hit).has_hit = true;
-            (*hit).dist = min(t1,t2);
-            (*hit).entry = (*ray).origin + (*ray).direction * min(t1,t2);
+            (*hit).dist = t;
+            (*hit).entry = (*ray).origin + (*ray).direction * t;
             (*hit).exit = (*ray).origin + (*ray).direction * max(t1,t2);
             (*hit).material = Material();
             (*hit).material.color = compute_color_from_sh((*hit).entry, spherical_harmonics);
             (*hit).normal = normalize((*hit).entry - sphere.center);
-            (*hit).shader = sphere.shader;
             
             return true;
         }
@@ -203,7 +216,7 @@
                         let obj_idx = tree_ids[node_id + j];
                         var hit = HitInfo();
                         if (intersect_ellipsoid(ray, obj_idx, &hit)) {
-                            // (*ray).t_max = hit.dist; // doesnt do anything
+                            (*ray).t_max = hit.dist;
                             (*intersections)[(*n_intersections)] = hit;
                             (*n_intersections) += 1;
                             if (MAXINTERSECTIONS <= (*n_intersections)) {
@@ -278,28 +291,39 @@
         }
 
 
-        fn density_at_point(hit: HitInfo, inv_cov_mat: mat3x3<f32>) -> f32 {
-            // Transform the point into the Gaussian's local space
-            let localPoint = inv_cov_mat * (hit.position - hit.gaussian.position);
-
-            // Compute the Gaussian density
-            let density = exp(-0.5 * dot(localPoint, localPoint));
-            return density;
-            // return exp(-0.5 * transpose(hit.position))
+        // Function to calculate Gaussian value at a point
+        fn gaussian_value(point: vec3f, center: vec3f, scales: vec3f, sigma: vec3f, amplitude: f32) -> f32 {
+            let diff = point - center;
+            let scaled_diff = diff / sigma;
+            let distance_squared = length(scaled_diff) * length(scaled_diff); 
+            return amplitude * exp(-distance_squared / 2.0);
         }
 
-        fn calculate_alpha(hit: HitInfo) -> f32 {
-            let midPoint: vec3f = (hit.entry + hit.exit) * 0.5;
-            let distanceFromCenter: f32 = length(midPoint - hit.gaussian.position);
-            let sigma: f32 = length(hit.gaussian.scale) / 2.0;  // Assuming uniform scale for simplicity
-            let alphaAtMidPoint: f32 = exp(-distanceFromCenter * distanceFromCenter / (2.0 * sigma * sigma));
-            
-            let pathLength: f32 = length(hit.exit - hit.entry);
-            let totalAlpha: f32 = alphaAtMidPoint * pathLength;  // Approximate total alpha
-            return totalAlpha;
+        fn calculate_alpha(hit: HitInfo, sd:f32, amp: f32) -> f32 {
+
+            // Gaussian function parameters
+            let sigma: vec3f = hit.gaussian.scale * 4.0 / sd; // would really like to get rid of the extra constant here, its just an arbirary number beacuase it looks nicer
+            let amplitude: f32 = amp * hit.material.color.a;
+
+            // Integrate the Gaussian function along the ray path inside the ellipsoid
+            let step_count: i32 = 10;
+            let step_vector: vec3f = (hit.exit - hit.entry) / f32(step_count);
+            var total_opacity: f32 = 0.0;
+            var current_point: vec3f = hit.entry;
+
+            for (var i: i32 = 0; i < step_count; i++) {
+                total_opacity += gaussian_value(current_point, hit.gaussian.position, hit.gaussian.scale, sigma, amplitude);
+                current_point += step_vector;
+            }
+            total_opacity /= f32(step_count);
+
+            // Normalize and clamp opacity
+            let normalized_opacity = max(min(total_opacity, 1),0);
+
+            return normalized_opacity;
         }
 
-        fn inverseRotateVector(v: vec3<f32>, q: vec4<f32>) -> vec3<f32> {
+        fn inverse_rotate_vector(v: vec3<f32>, q: vec4<f32>) -> vec3<f32> {
             let rotationMatrix = quaternion_to_matrix(q);
             let inverseRotationMatrix = transpose(rotationMatrix);
             return inverseRotationMatrix * v;
@@ -333,88 +357,47 @@
             return world_normal;
         }  
 
-        fn intersect_test(ray: ptr<function, Ray>, gaussian: Gaussian, material: Material, hit: ptr<function, HitInfo>) -> bool {            
-            let translatedRayOrigin = (*ray).origin - gaussian.position;
-            
-            // Apply inverse rotation to the ray to align with the ellipsoid's axes
-            let rotatedRayOrigin = inverseRotateVector(translatedRayOrigin, gaussian.rotation);
-            let rotatedRayDirection = inverseRotateVector((*ray).direction, gaussian.rotation);
-
-            // Scale the ray for the ellipsoid's local space
-            let originNormalized = rotatedRayOrigin / gaussian.scale;
-            let directionNormalized = rotatedRayDirection / gaussian.scale;
-
-            // Check if the ray originates inside the ellipsoid
-            if (dot(originNormalized, originNormalized) < 1.0) {
-                return false;
-            }
-
-            let a = dot(directionNormalized, directionNormalized);
-            let b = dot(originNormalized, directionNormalized);
-            let c = dot(originNormalized, originNormalized);
-            let discriminant = b * b - a * (c - 1.0);
-            if (discriminant < 0.0) {
-                return false;
-            }
-
-            let sqrtDiscriminant = sqrt(discriminant);
-            let t1 = (-b - sqrtDiscriminant) / a;
-            let t2 = (-b + sqrtDiscriminant) / a;
-
-            if (min(t1,t2) < (*ray).t_min) {//|| (*ray).t_max < max(t1,t2)) {
-                return false;
-            }
-
-            (*hit).gaussian = gaussian;
-            (*hit).entry = (*ray).origin + (*ray).direction * min(t1,t2);
-            (*hit).exit = (*ray).origin + (*ray).direction * max(t1,t2);
-            (*hit).normal = calculate_rotated_normal((*hit).entry, gaussian);
-            (*hit).dist = min(t1,t2);
-            (*hit).material = material;
-
-            return true;
-        }
-
         fn intersect_ellipsoid(ray: ptr<function, Ray>, id: u32, hit: ptr<function, HitInfo>) -> bool {            
             let gaussian: Gaussian = gaussians[id];
             let spherical_harmonics: array<vec3f,16> = spherical_harmonics[id];
 
-            let translatedRayOrigin = (*ray).origin - gaussian.position;
+            let translated_ray_origin = (*ray).origin - gaussian.position;
             
             // Apply inverse rotation to the ray to align with the ellipsoid's axes
-            let rotatedRayOrigin = inverseRotateVector(translatedRayOrigin, gaussian.rotation);
-            let rotatedRayDirection = inverseRotateVector((*ray).direction, gaussian.rotation);
+            let rotated_ray_origin = inverse_rotate_vector(translated_ray_origin, gaussian.rotation);
+            let rotated_ray_direction = inverse_rotate_vector((*ray).direction, gaussian.rotation);
 
             // Scale the ray for the ellipsoid's local space
-            let originNormalized = rotatedRayOrigin / gaussian.scale;
-            let directionNormalized = rotatedRayDirection / gaussian.scale;
+            let origin_normalized = rotated_ray_origin / gaussian.scale;
+            let direction_normalized = rotated_ray_direction / gaussian.scale;
 
             // Check if the ray originates inside the ellipsoid
-            if (dot(originNormalized, originNormalized) < 1.0) {
+            if (dot(origin_normalized, origin_normalized) < 1.0) {
                 return false;
             }
 
-            let a = dot(directionNormalized, directionNormalized);
-            let b = dot(originNormalized, directionNormalized);
-            let c = dot(originNormalized, originNormalized);
+            let a = dot(direction_normalized, direction_normalized);
+            let b = dot(origin_normalized, direction_normalized);
+            let c = dot(origin_normalized, origin_normalized);
             let discriminant = b * b - a * (c - 1.0);
             if (discriminant < 0.0) {
                 return false;
             }
 
-            let sqrtDiscriminant = sqrt(discriminant);
-            let t1 = (-b - sqrtDiscriminant) / a;
-            let t2 = (-b + sqrtDiscriminant) / a;
+            let sqrt_discriminant = sqrt(discriminant);
+            let t1 = (-b - sqrt_discriminant) / a;
+            let t2 = (-b + sqrt_discriminant) / a;
+            let t = min(t1,t2);
 
-            if (min(t1,t2) < (*ray).t_min) {//|| (*ray).t_max < max(t1,t2)) {
+            if (t < (*ray).t_min) {//|| (*ray).t_max < max(t1,t2)) {
                 return false;
             }
 
             (*hit).gaussian = gaussian;
-            (*hit).entry = (*ray).origin + (*ray).direction * min(t1,t2);
+            (*hit).entry = (*ray).origin + (*ray).direction * t;
             (*hit).exit = (*ray).origin + (*ray).direction * max(t1,t2);
             (*hit).normal = calculate_rotated_normal((*hit).entry, gaussian);
-            (*hit).dist = min(t1,t2);
+            (*hit).dist = t;
             (*hit).material = Material();
             (*hit).material.color = compute_color_from_sh((*hit).entry, spherical_harmonics);
             (*hit).material.color.a = (*hit).gaussian.normal.a; // alpha is stored in normal for now, works 
@@ -422,25 +405,7 @@
             return true;
         }
         
-        const SH_C0 = 0.28209479177387814;
-        const SH_C1 = 0.4886025119029199;
-        const SH_C2 = array(
-            1.0925484305920792,
-            -1.0925484305920792,
-            0.31539156525252005,
-            -1.0925484305920792,
-            0.5462742152960396
-        );
-        const SH_C3 = array(
-            -0.5900435899266435,
-            2.890611442640554,
-            -0.4570457994644658,
-            0.3731763325901154,
-            -0.4570457994644658,
-            1.445305721320277,
-            -0.5900435899266435
-        );
-
+        // PLEASE NOTE: This function is copied from: https://github.com/cvlab-epfl/gaussian-splatting-web/blob/905b3c0fb8961e42c79ef97e64609e82383ca1c2/src/shaders.ts#L1
         fn compute_color_from_sh(position: vec3f, sh: array<vec3f, 16>) -> vec4f {
             let dir = normalize(position - uniforms.camera_position);
             var result = SH_C0 * sh[0];
@@ -499,87 +464,63 @@
         }
 
         fn intersect_scene(ray: ptr<function, Ray>) -> vec4f {
-            // Scene description for debugging simple ellipsoids
-            let default_material: Material = Material();
-            var red = default_material;
-            var blue = default_material;
-            red.color = vec4f(.5, 0.0, 0.0, 0.1);
-            blue.color = vec4f(0.0, 0.0, .5, 0.5);
-
-            var redg: Gaussian = Gaussian(
-                vec3f(0,0,0),   // pos
-                vec3f(1,1,3),   // scale
-                vec4f(0.7,0,0,0.3),    // rotation
-                vec4f(1,1,1, 0),   // normal
-            );
-            var blueg: Gaussian = Gaussian(
-                vec3f(0,0,0),   // pos
-                vec3f(.9,.9,3),   // scale
-                vec4f(.7,0,0,0.3),    // rotation
-                vec4f(1,1,1, 0),   // normal
-            );
-            var g = array<Gaussian, 2>(redg,blueg);
-            var m = array<Material, 2>(red,blue);
             var intersections = array<HitInfo, MAXINTERSECTIONS>();
             var n_intersections: i32 = 0;
+
+            var accumulated_color: vec3f = BACKGROUNDCOLOR.rgb;
+            var accumulated_alpha: f32 = 1.0;
             
+            // Scene description for debugging simple ellipsoids
+            // let default_material: Material = Material();
+            // var red = default_material;
+            // var blue = default_material;
+            // var green = default_material;
+            // red.color = vec4f(1.0, 0.0, 0.0, 1);
+            // blue.color = vec4f(0.0, 0.0, 1.0, 1);
+            // green.color = vec4f(0.0, 1.0, 0.0, 1);
+
+            // var redg: Gaussian = Gaussian(
+            //     vec3f(0,0,0),   // pos
+            //     vec3f(1,1,1),   // scale
+            //     vec4f(0,0,0,1), // rotation
+            //     vec4f(1,1,1, 0),   // normal
+            // );
+            // var blueg: Gaussian = Gaussian(
+            //     vec3f(0,1,0),   // pos
+            //     vec3f(1,1,1),   // scale
+            //     vec4f(0,0,0,1),
+            //     vec4f(1,1,1, 0),   // normal
+            // );
+            // var greeng: Gaussian = Gaussian(
+            //     vec3f(0,0.5,0.87),   // pos
+            //     vec3f(1,1,1),   // scale
+            //     vec4f(0,0,0,1),     // rotation
+            //     vec4f(1,1,1, 0),   // normal
+            // );
+            // var g = array<Gaussian, 3>(blueg, redg, greeng);
+            // var m = array<Material, 3>( blue, red, green);
             // Testing of hard coded ellipsoids / spheres
-            // for (var i: u32 = 0; i < 2; i++) {
+            // for (var i: u32 = 0; i < 3; i++) {
             //     var hit = HitInfo();
             //     if (intersect_test(ray, g[i], m[i], &hit)) {
             //         intersections[n_intersections] = hit;
             //         n_intersections += 1;
             //     }
             // }
-            
-            // Check for hit against all ellipsoids - for now there are only N for testing
-            // Higher than 50000 fails, can hopefully be solved with a BVH
-            // for (var i: u32 = 0; i < 10000; i++) {
-            //     var hit = HitInfo();
-            //     if (intersect_ellipsoid(ray, i, &hit)) {
-            //         intersections[n_intersections] = hit;
-            //         n_intersections += 1;
 
-            //         if (MAXINTERSECTIONS <= n_intersections) {
-            //             break;
-            //         }
-            //     }
-            // }
-            
             if (intersect_min_max(ray)) {
                 // Remove the gaussians too close by
-                // (*ray).t_min = 1;
+                (*ray).t_min = 1;
                 intersect_bsp_tree(ray, &intersections, &n_intersections);
             }
             
-            
-            // Model as spheres for testing
-            // for (var i: u32 = 0; i < 10000; i++) {
-            //     var hit = HitInfo();
-            //     let sphere: Sphere = Sphere(
-            //         gaussians[i].position,
-            //         0.025,
-            //         m[i%2],
-            //         0 // shader
-            //     );
-            //     if (intersect_sphere(ray, sphere, spherical_harmonics[i], &hit)) {
-            //         intersections[n_intersections] = hit;
-            //         n_intersections += 1;
-            //     }
-            // }
-            
-            var accumulated_color: vec3f = BACKGROUNDCOLOR.rgb;
-            var accumulated_alpha: f32;
-
-            // Alpha blending
+            // Alpha-blending
             for (var i: i32 = n_intersections - 1; 0 <= i; i--) {
                 let hit = intersections[i];
-                let pixel_alpha = calculate_alpha(hit);
-                let base_alpha = hit.material.color.a;
-                let total_alpha = min(pixel_alpha + base_alpha, 1);
+                let hit_opacity = calculate_alpha(hit, 4, 3); // 4,3 er nice
 
-                accumulated_color = accumulated_color * (1.0 - total_alpha) + (hit.material.color.rgb * total_alpha);
-                accumulated_alpha = accumulated_alpha + total_alpha * (1.0 - accumulated_alpha);
+                accumulated_color = mix(accumulated_color, hit.material.color.rgb, hit_opacity);
+                accumulated_alpha *= (1.0 - hit_opacity);
             }
 
             return vec4<f32>(accumulated_color, accumulated_alpha);
@@ -589,29 +530,19 @@
         fn main_fs(@builtin(position) fragcoord: vec4f, @location(0) coords: vec2f) -> FSOut {
             let launch_idx: u32 = u32(fragcoord.y) * u32(uniforms.canvas_width) + u32(fragcoord.x); 
             var seed: u32 = tea(launch_idx, u32(uniforms.frame_number));
-            var jitter: vec2f = vec2f(random(&seed), random(&seed)) / f32(uniforms.canvas_height);
+            let jitter: vec2f = vec2f(random(&seed), random(&seed)) / f32(uniforms.canvas_height);
+            let jittered_coords = coords + jitter;
             
-            let jittered_coords = coords;// + jitter;
-
             let uv = vec2f(jittered_coords.x * uniforms.aspect_ratio * 0.5, jittered_coords.y * 0.5);
-
-            // Temp for avoiding errors if accidentally not using one of them
-            let a = gaussians[0];
-            let b = spherical_harmonics[0];
-            var d = inv_covariance_matrices[0];
-            var e = aabb;
-            var f = tree_ids[0];
-            var g = bsp_tree[0];
-            var h = bsp_planes[0];
 
             var ray = get_camera_ray(uv);
             var shaded_result: vec4f = intersect_scene(&ray);
             
-            let curr_sum = textureLoad(renderTexture, vec2u(fragcoord.xy), 0).rgb * f32(uniforms.frame_number); 
-            // var accum_color = (shaded_result + curr_sum)/(uniforms.frame_number + 1);
+            let curr_sum: vec3f = textureLoad(renderTexture, vec2u(fragcoord.xy), 0).rgb * f32(uniforms.frame_number); 
+            var accum_color = (shaded_result.rgb + curr_sum)/(uniforms.frame_number + 1);
 
             return FSOut(
-                // vec4f(pow(accum_color, vec3f(1.0/uniforms.gamma)), 1.0),
+                // vec4f(pow(accum_color, vec3f(1.0/uniforms.gamma)), shaded_result.a),
                 shaded_result,
                 vec4f(vec3f(), 1.0)
             );
@@ -650,7 +581,7 @@
     <input type="file" id="file-input" /><br>
     <pre id="file-content"></pre>
 
-    <p style="display: none;" id="loading-text"> ... Please wait ... </p>
+    <p style="visibility: hidden;" id="loading-text"> ... Please wait ... </p>
     <canvas id="webgpu-canvas" width=512 height=512>
         Error: Browser doesn't support HTML5 canvas
     </canvas>
