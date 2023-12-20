@@ -1,7 +1,5 @@
 "use strict"; // With strict mode, you can not, for example, use undeclared variables.
 
-var a; // for debugging in console
-
 // Logging variables
 const LOG_INTERVAL = 1000;
 var doProgressiveUpdating = false;
@@ -16,97 +14,15 @@ var dragging = false;
 var lastMouseX = -1;
 var lastMouseY = -1;
 
-
 // When going from rotation matrix to camera basis
 //  - Third col is forward
 //  - Second col is up, negate to turn right side up
-// img 301
-
 let camera0 = {
     "camera_const": 1, 
     "camera_position": [15, 0, 0, 0], 
     "camera_look_point" : [0,0,0, 0], 
     "camera_up_vector": [0,0,1,0]
 };
-
-let camera1 = {
-    "camera_const": 1, 
-    "camera_position": [-3.222086,-0.121226,-4.121659, 0], 
-    "camera_look_point" : [-3.062380,-0.191665,-3.137010, 0], 
-    "camera_up_vector": [-0.011754, -0.997516, -0.069454, 0]
-};
-
-// img 30
-let camera2 = {
-    "camera_const": 1, 
-    "camera_position": [1.47262563, -0.19514904, -2.24352285, 0], 
-    "camera_look_point" : [-0.7850281427424773, -0.008068184998965968, 0.6194075552438143, 0], 
-    "camera_up_vector": [0.042292231840881954, -0.9982801336144452, -0.04059731464817187, 0]
-};
-// img 46
-let camera3 = {
-    "camera_const": 1, 
-    "camera_position": [4.1361417825815465, -0.3367029601030584, -1.111293539303772, 0], 
-    "camera_look_point" : [-0.7608093251646336, 0.05902557363325378, 0.6462856585131684, 0], 
-    "camera_up_vector": [-0.0020018479234047387, -0.9960639931668536, 0.08861441260536376, 0]
-};
-
-// truck
-// img 249
-let camera4 = {
-    "camera_const": 1, 
-    "camera_position": [-0.7453464164560574, -0.7977114101706951, 4.9695584877985555, 0], 
-    "camera_look_point" : [0.20163019603892962, 0.3617058744816951, -0.9102275124444077, 0], 
-    "camera_up_vector": [0.08670652504949773, -0.9322570779826731, -0.35125306983007154, 0]
-};
-// img 70
-let camera5 = {
-    "camera_const": 1, 
-    "camera_position": [-3.039439197893096, -0.4726133599709087, 2.512844345892148, 0], 
-    "camera_look_point" : [0.7149919232058494, 0.4106526223365948, -0.5658188522119766, 0], 
-    "camera_up_vector": [0.2717905120761306, -0.9089201066746632, -0.3162185276480709, 0]
-};
-// img 169
-let camera6 = {
-    "camera_const": 1, 
-    "camera_position": [3.0985449119554045, 0.5254505024787448, -1.6331082484937574, 0], 
-    "camera_look_point" : [-0.8334831220028989, 0.07785373120153585, 0.5470326150005134, 0], 
-    "camera_up_vector": [-0.08601874382482233, -0.996235818354557, 0.010722403565702919, 0]
-};
-
-//kitchen
-// img 690
-let camera7 = {
-    "camera_const": 2, 
-    "camera_position": [-3.1270714219453923, 1.5662197893753194, -1.8714777477211268, 0], 
-    "camera_look_point" : [0.618256836983814, 0.06071940905299374, 0.7836272308228096, 0], 
-    "camera_up_vector": [0.36497459798965204, -0.9051795385733871, -0.2178153937864858, 0]
-};
-// img 767
-let camera8 = {
-    "camera_const": 2, 
-    "camera_position": [1.916728395625472, 0.2651834767479494, -2.5546570572338316, 0], 
-    "camera_look_point" : [0,1.5,1, 0], 
-    "camera_up_vector": [-0.5391969607143274, -0.8409985466968951, 0.044587913274138934, 0]
-};
-
-// playroom
-// img 5674
-let camera9 = {
-    "camera_const": 2, 
-    "camera_position": [0.6511658240697626, 0.6133297590429543, -0.043402685513086466, 0], 
-    "camera_look_point" : [0,0,0, 0], 
-    "camera_up_vector": [0.572201079458985, -0.7406430255068439, -0.3521843742048202, 0]
-};
-// let camera9 = {
-//     "camera_const": 2, 
-//     "camera_position": [0.6511658240697626, 0.6133297590429543, -0.043402685513086466, 0], 
-//     "camera_look_point" : [0.8195881182564873, 0.5317897406331737, 0.21324865338400573, 0], 
-//     "camera_up_vector": [0,0,1, 0]
-// };
-
-
-
 
 var uniforms = {
     "eps" : 1e-2,
@@ -121,13 +37,12 @@ var uniforms = {
     "camera_look_point" : 1.0,
     "camera_up_vector" : 1.0, 
 };
+// Add camera to uniforms, swap camera depending on scene. Camera should be part of scene description i think
+uniforms = Object.assign({}, uniforms, camera0);
 
 var uniformBuffer;
 var drawingInfo;
 var bindGroup;
-
-// Add camera to uniforms, swap camera depending on scene. Camera should be part of scene description i think
-uniforms = Object.assign({}, uniforms, camera3);
 
 function setupRenderTextures(device, canvas) {
     var textures = new Object();
@@ -161,27 +76,14 @@ function configureBindGroup(device, drawingInfo, pipeline, textures) {
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
     });
 
-    // let vertexOrdering = argSortByDistanceTo(drawingInfo.vertexPositions, uniforms.camera_position);
-    // const vertexOrderingBuffer = device.createBuffer({
-    //     size: vertexOrdering.byteLength,
-    //     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
-    // })
-
     const sphericalHarmonicsBuffer = device.createBuffer({
         size: drawingInfo.sphericalHarmonics.byteLength,
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
     });
 
-    // const invCovMatricesBuffer = device.createBuffer({
-    //     size: drawingInfo.invCovMatrices.byteLength,
-    //     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
-    // });
-
     device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
     device.queue.writeBuffer(verticesBuffer, 0, drawingInfo.vertices);
-    // device.queue.writeBuffer(vertexOrderingBuffer, 0, vertexOrdering);
     device.queue.writeBuffer(sphericalHarmonicsBuffer, 0, drawingInfo.sphericalHarmonics);
-    // device.queue.writeBuffer(invCovMatricesBuffer, 0, drawingInfo.invCovMatrices);
 
     var bindGroup = device.createBindGroup({ 
         layout: pipeline.getBindGroupLayout(0), 
@@ -189,9 +91,7 @@ function configureBindGroup(device, drawingInfo, pipeline, textures) {
             { binding: 0, resource: { buffer: uniformBuffer }},
             { binding: 1, resource: textures.renderDst.createView() },
             { binding: 2, resource: { buffer: verticesBuffer }},
-            // { binding: 3, resource: { buffer: vertexOrderingBuffer }},
             { binding: 3, resource: { buffer: sphericalHarmonicsBuffer }},
-            // { binding: 4, resource: { buffer: invCovMatricesBuffer }},
             { binding: 4, resource: { buffer: buffers.aabb }},
             { binding: 5, resource: { buffer: buffers.treeIds }},
             { binding: 6, resource: { buffer: buffers.bspTree }},
@@ -229,9 +129,6 @@ function render(device, context, textures, bindGroup, pipeline) {
 
 function animate(device, context, pipeline, bindGroup, textures) {
     updateFPSCounter(fpsLabel, doProgressiveUpdating);
-
-    // Render the scene
-    // bindGroup = configureBindGroup(device, a, pipeline, textures); - no problem writing the buffer, very fast 
 
     render(device, context, textures, bindGroup, pipeline);
     
@@ -318,36 +215,33 @@ window.onload = async function () {
 
     // Good for local development, requires chrome in unsafe mode: 
     // > open -a Google\ Chrome --args --allow-file-access-from-files
-    readLocalFile("data/train.ply", function(response) {
-        console.log("from local", response);
+    // readLocalFile("data/train.ply", function(response) {
+    //     const [headerString, bodyBuffer] = splitHeaderAndBody(response);
+    //     const header = parseHeader(headerString);
+    //     const drawingInfo = parseBody(header, bodyBuffer);
         
-        const [headerString, bodyBuffer] = splitHeaderAndBody(response);
-        const header = parseHeader(headerString);
-        const drawingInfo = parseBody(header, bodyBuffer);
-        
-        bindGroup = configureBindGroup(device, drawingInfo, pipeline, textures);
+    //     bindGroup = configureBindGroup(device, drawingInfo, pipeline, textures);
 
-        hideLoadingText(loadingText);
-        requestAnimationFrame(() => {
-            animate(device, context, pipeline, bindGroup, textures);
-        });
-    });
-
-    // document.getElementById('file-input').addEventListener('change', function() {
-    //     readInputFile.call(this, function(response) {
-    //         showLoadingText();
-    //         console.log("Read file", response);
-    //         const [headerString, bodyBuffer] = splitHeaderAndBody(response);
-    //         const header = parseHeader(headerString);
-    //         const drawingInfo = parseBody(header, bodyBuffer);
-            
-    //         bindGroup = configureBindGroup(device, drawingInfo, pipeline, textures);
-
-    //         requestAnimationFrame(() => {
-    //             animate(device, context, pipeline, bindGroup, textures);
-    //         });
+    //     hideLoadingText(loadingText);
+    //     requestAnimationFrame(() => {
+    //         animate(device, context, pipeline, bindGroup, textures);
     //     });
     // });
+
+    document.getElementById('file-input').addEventListener('change', function() {
+        readInputFile.call(this, function(response) {
+            console.log("Read file", response);
+            const [headerString, bodyBuffer] = splitHeaderAndBody(response);
+            const header = parseHeader(headerString);
+            const drawingInfo = parseBody(header, bodyBuffer);
+            
+            bindGroup = configureBindGroup(device, drawingInfo, pipeline, textures);
+
+            requestAnimationFrame(() => {
+                animate(device, context, pipeline, bindGroup, textures);
+            });
+        });
+    });
     
 
     /* Update zoom */
@@ -409,4 +303,78 @@ window.onload = async function () {
         lastMouseX = e.clientX;
         lastMouseY = e.clientY;
     });
+};
+
+
+// *** These are camera locations for specific scenes, the camera can be swapped in uniforms, see top of app.js*** 
+// truck
+// img 301
+let camera1 = {
+    "camera_const": 1, 
+    "camera_position": [-3.222086,-0.121226,-4.121659, 0], 
+    "camera_look_point" : [-3.062380,-0.191665,-3.137010, 0], 
+    "camera_up_vector": [-0.011754, -0.997516, -0.069454, 0]
+};
+
+// img 30
+let camera2 = {
+    "camera_const": 1, 
+    "camera_position": [1.47262563, -0.19514904, -2.24352285, 0], 
+    "camera_look_point" : [-0.7850281427424773, -0.008068184998965968, 0.6194075552438143, 0], 
+    "camera_up_vector": [0.042292231840881954, -0.9982801336144452, -0.04059731464817187, 0]
+};
+// img 46
+let camera3 = {
+    "camera_const": 1, 
+    "camera_position": [4.1361417825815465, -0.3367029601030584, -1.111293539303772, 0], 
+    "camera_look_point" : [-0.7608093251646336, 0.05902557363325378, 0.6462856585131684, 0], 
+    "camera_up_vector": [-0.0020018479234047387, -0.9960639931668536, 0.08861441260536376, 0]
+};
+
+// truck
+// img 249
+let camera4 = {
+    "camera_const": 1, 
+    "camera_position": [-0.7453464164560574, -0.7977114101706951, 4.9695584877985555, 0], 
+    "camera_look_point" : [0.20163019603892962, 0.3617058744816951, -0.9102275124444077, 0], 
+    "camera_up_vector": [0.08670652504949773, -0.9322570779826731, -0.35125306983007154, 0]
+};
+// img 70
+let camera5 = {
+    "camera_const": 1, 
+    "camera_position": [-3.039439197893096, -0.4726133599709087, 2.512844345892148, 0], 
+    "camera_look_point" : [0.7149919232058494, 0.4106526223365948, -0.5658188522119766, 0], 
+    "camera_up_vector": [0.2717905120761306, -0.9089201066746632, -0.3162185276480709, 0]
+};
+// img 169
+let camera6 = {
+    "camera_const": 1, 
+    "camera_position": [3.0985449119554045, 0.5254505024787448, -1.6331082484937574, 0], 
+    "camera_look_point" : [-0.8334831220028989, 0.07785373120153585, 0.5470326150005134, 0], 
+    "camera_up_vector": [-0.08601874382482233, -0.996235818354557, 0.010722403565702919, 0]
+};
+
+//kitchen
+// img 690
+let camera7 = {
+    "camera_const": 2, 
+    "camera_position": [-3.1270714219453923, 1.5662197893753194, -1.8714777477211268, 0], 
+    "camera_look_point" : [0.618256836983814, 0.06071940905299374, 0.7836272308228096, 0], 
+    "camera_up_vector": [0.36497459798965204, -0.9051795385733871, -0.2178153937864858, 0]
+};
+// img 767
+let camera8 = {
+    "camera_const": 2, 
+    "camera_position": [1.916728395625472, 0.2651834767479494, -2.5546570572338316, 0], 
+    "camera_look_point" : [0,1.5,1, 0], 
+    "camera_up_vector": [-0.5391969607143274, -0.8409985466968951, 0.044587913274138934, 0]
+};
+
+// playroom
+// img 5674
+let camera9 = {
+    "camera_const": 2, 
+    "camera_position": [0.6511658240697626, 0.6133297590429543, -0.043402685513086466, 0], 
+    "camera_look_point" : [0,0,0, 0], 
+    "camera_up_vector": [0.572201079458985, -0.7406430255068439, -0.3521843742048202, 0]
 };
