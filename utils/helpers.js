@@ -128,49 +128,64 @@ function Quaternion2RotMatrix(q) {
     ]);
 }
 
-function getPrincipalAxes(scaleVector, rotationQuaternion) {
-    // https://en.wikipedia.org/wiki/Ellipsoid see "principal axes"
-    // Unrotated axes
-    let r1 = [scaleVector[0], 0, 0];
-    let r2 = [0, scaleVector[1], 0];
-    let r3 = [0, 0, scaleVector[2]];
-
-    // Rotated axes
-    let rotatedR1 = rotateVector(rotationQuaternion, r1);
-    let rotatedR2 = rotateVector(rotationQuaternion, r2);
-    let rotatedR3 = rotateVector(rotationQuaternion, r3);
-
-    return {
-        r1: rotatedR1,
-        r2: rotatedR2,
-        r3: rotatedR3
-    };
-}
-
 function rotateVector(quaternion, vector) {
     let rotationMatrix = Quaternion2RotMatrix(quaternion);
     return mult(rotationMatrix, vector);
 }
 
-function CalculateEllipsoidBounds(positionVector, scaleVector, rotationVector) {
-    P = getPrincipalAxes(scaleVector, rotationVector);
-    
-    // https://math.stackexchange.com/a/2348806
-    x = Math.sqrt(P.r1[0]*P.r1[0] + P.r1[1]*P.r1[1] + P.r1[2]*P.r1[2]) * 0.5;
-    y = Math.sqrt(P.r2[0]*P.r2[0] + P.r2[1]*P.r2[1] + P.r2[2]*P.r2[2]) * 0.5;
-    z = Math.sqrt(P.r3[0]*P.r3[0] + P.r3[1]*P.r3[1] + P.r3[2]*P.r3[2]) * 0.5;
+function CalculateEllipsoidBounds(positionVector, scaleVector, rotationQuaternion) {
+    // Create a set of points on the ellipsoid surface
+    let points = SampleEllipsoidSurfacePoints(scaleVector);
 
-    xmin = positionVector[0] - x;
-    xmax = positionVector[0] + x;
-    ymin = positionVector[1] - y;
-    ymax = positionVector[1] + y;
-    zmin = positionVector[2] - z;
-    zmax = positionVector[2] + z;
+    // Rotate these points
+    let rotatedPoints = points.map(p => rotateVector(rotationQuaternion, p));
+
+    // Initialize min and max values
+    let min = [Infinity, Infinity, Infinity];
+    let max = [-Infinity, -Infinity, -Infinity];
+
+    // Find extreme values
+    for (let p of rotatedPoints) {
+        for (let i = 0; i < 3; i++) {
+            if (p[i] < min[i]) min[i] = p[i];
+            if (p[i] > max[i]) max[i] = p[i];
+        }
+    }
+
+    // Adjust for positionVector
+    for (let i = 0; i < 3; i++) {
+        min[i] += positionVector[i];
+        max[i] += positionVector[i];
+        // min[i] *= 1.1; // Add 10% buffer as AABB will tend to be too small
+        // max[i] *= 1.1; // Add 10% buffer as AABB will tend to be too small
+    }
 
     return {
-        min: [xmin, ymin, zmin],
-        max: [xmax, ymax, zmax]
+        min: min,
+        max: max
+    };
+}
+
+function SampleEllipsoidSurfacePoints(scaleVector, numberOfPoints = 100) {
+    // Normalize scale to determine sampling density
+    let maxScale = Math.max(...scaleVector);
+    let normalizedScale = scaleVector.map(s => s / maxScale);
+
+    // Calculate step size based on the desired number of points
+    let step = Math.pow(2 * normalizedScale[0] * normalizedScale[1] * normalizedScale[2] / numberOfPoints, 1/3);
+
+    // Sample points in the ellipsoid
+    let points = [];
+    for (let x = -normalizedScale[0]; x <= normalizedScale[0]; x += step) {
+        for (let y = -normalizedScale[1]; y <= normalizedScale[1]; y += step) {
+            for (let z = -normalizedScale[2]; z <= normalizedScale[2]; z += step) {
+                if ((x / normalizedScale[0]) ** 2 + (y / normalizedScale[1]) ** 2 + (z / normalizedScale[2]) ** 2 <= 1) {
+                    points.push([x * maxScale, y * maxScale, z * maxScale]);
+                }
+            }
+        }
     }
+    return points;
 }
 
 function TransformationMatrix(scaleVector, rotationVector) {
@@ -208,7 +223,7 @@ function parseBody(header, bodyBuffer) {
     const vertexSize = header.nProperties * BYTES_PER_PROPERTY;
 
     // Float32Arrays to store the vertices 
-    const vertices = new Float32Array(header.nVertices * pad(header.vertexPropertyIndices.length));
+    const vertices = new Float32Array(header.nVertices * 16);
     const vertexPositions = [];
     const sphericalHarmonics = new Float32Array(header.nVertices * 64); 
     const invCovMatrices = new Float32Array(header.nVertices * pad(9)); // Cotains 3x3 matrices 
@@ -262,7 +277,7 @@ function parseBody(header, bodyBuffer) {
         vertices.set(rotation,  8 + n * 16);
         vertices.set(normal,   12 + n * 16);
         vertexPositions.push(position.slice(0,3));
-        invCovMatrices.set(AddFourthDimension(flatten(InvCovarianceMatrix3d(scale, rotation))), n * pad(9));
+        // invCovMatrices.set(AddFourthDimension(flatten(InvCovarianceMatrix3d(scale, rotation))), n * pad(9));
 
         // TODO: This not exactly nice, and should be cleaned up
         // Set the first set of spherical harmonics
@@ -287,7 +302,7 @@ function parseBody(header, bodyBuffer) {
     console.log("n vertices: ", n);
     return {
         n_vertices: n,
-        vertices : vertices,
+        vertices : vertices.slice(0, n * 16), // How many vertices did we actually read x how many nums per vertex are we storing
         vertexPositions: vertexPositions,
         sphericalHarmonics : sphericalHarmonics,
         invCovMatrices : invCovMatrices
@@ -351,6 +366,7 @@ function readInputFile(callback) {
 }
 
 function readLocalFile(fileName, callback) {
+    showLoadingText();
     var request = new XMLHttpRequest(); 
     request.open('GET', fileName, true); // Create a request to get file 
 
@@ -415,11 +431,9 @@ function updateFPSCounter(e, showfps) {
 }
 
 function showLoadingText() {
-    console.log("showing");
-    e.style.display = 'block'; // Show the element
+    document.getElementById("loading-text").style.visibility = 'visible'; // Show the element
 }
 
-function hideLoadingText() {
-    console.log("hiding");
-    e.style.display = 'none'; // Hide the element
+function hideLoadingText(e) {
+    e.style.visibility = 'hidden'; // Hide the element
 }
