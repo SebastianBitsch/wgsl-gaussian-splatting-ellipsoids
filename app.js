@@ -35,6 +35,7 @@ let camera1 = {
     "camera_look_point" : [-3.062380,-0.191665,-3.137010, 0], 
     "camera_up_vector": [-0.011754, -0.997516, -0.069454, 0]
 };
+
 // img 30
 let camera2 = {
     "camera_const": 1, 
@@ -126,7 +127,7 @@ var drawingInfo;
 var bindGroup;
 
 // Add camera to uniforms, swap camera depending on scene. Camera should be part of scene description i think
-uniforms = Object.assign({}, uniforms, camera9);
+uniforms = Object.assign({}, uniforms, camera3);
 
 function setupRenderTextures(device, canvas) {
     var textures = new Object();
@@ -171,16 +172,16 @@ function configureBindGroup(device, drawingInfo, pipeline, textures) {
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
     });
 
-    const invCovMatricesBuffer = device.createBuffer({
-        size: drawingInfo.invCovMatrices.byteLength,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
-    })
+    // const invCovMatricesBuffer = device.createBuffer({
+    //     size: drawingInfo.invCovMatrices.byteLength,
+    //     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
+    // });
 
     device.queue.writeBuffer(uniformBuffer, 0, uniformValues);
     device.queue.writeBuffer(verticesBuffer, 0, drawingInfo.vertices);
     // device.queue.writeBuffer(vertexOrderingBuffer, 0, vertexOrdering);
     device.queue.writeBuffer(sphericalHarmonicsBuffer, 0, drawingInfo.sphericalHarmonics);
-    device.queue.writeBuffer(invCovMatricesBuffer, 0, drawingInfo.invCovMatrices);
+    // device.queue.writeBuffer(invCovMatricesBuffer, 0, drawingInfo.invCovMatrices);
 
     var bindGroup = device.createBindGroup({ 
         layout: pipeline.getBindGroupLayout(0), 
@@ -190,11 +191,11 @@ function configureBindGroup(device, drawingInfo, pipeline, textures) {
             { binding: 2, resource: { buffer: verticesBuffer }},
             // { binding: 3, resource: { buffer: vertexOrderingBuffer }},
             { binding: 3, resource: { buffer: sphericalHarmonicsBuffer }},
-            { binding: 4, resource: { buffer: invCovMatricesBuffer }},
-            { binding: 5, resource: { buffer: buffers.aabb }},
-            { binding: 6, resource: { buffer: buffers.treeIds }},
-            { binding: 7, resource: { buffer: buffers.bspTree }},
-            { binding: 8, resource: { buffer: buffers.bspPlanes }}
+            // { binding: 4, resource: { buffer: invCovMatricesBuffer }},
+            { binding: 4, resource: { buffer: buffers.aabb }},
+            { binding: 5, resource: { buffer: buffers.treeIds }},
+            { binding: 6, resource: { buffer: buffers.bspTree }},
+            { binding: 7, resource: { buffer: buffers.bspPlanes }}
         ],
     });
 
@@ -249,8 +250,7 @@ function animate(device, context, pipeline, bindGroup, textures) {
         return;
     }
 
-    // showLoadingText(loadingText, false);
-    hideLoadingText();
+    hideLoadingText(loadingText);
 
     // requestAnimationFrame cant pass arguments to callback, this is a cheeky workaround
     requestAnimationFrame(() => {
@@ -318,14 +318,16 @@ window.onload = async function () {
 
     // Good for local development, requires chrome in unsafe mode: 
     // > open -a Google\ Chrome --args --allow-file-access-from-files
-    readLocalFile("data/playroom.ply", function(response) {
+    readLocalFile("data/train.ply", function(response) {
         console.log("from local", response);
+        
         const [headerString, bodyBuffer] = splitHeaderAndBody(response);
         const header = parseHeader(headerString);
         const drawingInfo = parseBody(header, bodyBuffer);
         
         bindGroup = configureBindGroup(device, drawingInfo, pipeline, textures);
 
+        hideLoadingText(loadingText);
         requestAnimationFrame(() => {
             animate(device, context, pipeline, bindGroup, textures);
         });
