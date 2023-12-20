@@ -9,6 +9,7 @@ const indexOfAll = (arr, val) => arr.reduce((acc, el, i) => (el === val ? [...ac
 
 const pad = (num) => num - (num % 4) + (4 * (num % 4 != 0));
 
+
 function splitHeaderAndBody(fileBuffer) {
     // Create a Uint8Array from the ArrayBuffer for random access ease of use
     const fileArray = new Uint8Array(fileBuffer);
@@ -45,18 +46,16 @@ function splitHeaderAndBody(fileBuffer) {
 
     // Extract the binary body
     const bodyBuffer = fileBuffer.slice(endHeaderPosition);
-
-    // Return the header string and the body ArrayBuffer
-    // return {
-    //     header: headerString,
-    //     body: bodyBuffer
-    // };
     return [headerString, bodyBuffer];
 }
 
+/**Change the ordering of an array, there is probably a slicker way of doing this
+ * [r r r ... g g g ... b b b] -> [r g b r g b r g b ...]
+ * 
+ * @param {*} rrggbb 
+ * @returns 
+ */
 function rearrangeRGB(rrggbb) {
-    // Change the ordering of an array, there is probably a slicker way of doing this
-    // [r r r ... g g g ... b b b] -> [r g b r g b r g b ...]
     const rgbrgb = [];
 
     for (let i = 0; i < rrggbb.length / 3; i++) {
@@ -72,7 +71,7 @@ function rearrangeRGB(rrggbb) {
  * read the rest of the file
  *  
  * @param {*} headerString the raw string of the header
- * @param {*} maxVerts the max number of vertices to read (500000 can fit in a single buffer)- some files are trillions, we cant read that many sadly. 
+ * @param {*} maxVerts the max number of vertices to read (500000 can fit in a single buffer)- most files are millions, we cant read that many sadly. 
  * @returns 
  */
 function parseHeader(headerString, maxVerts = 500000) {
@@ -83,7 +82,7 @@ function parseHeader(headerString, maxVerts = 500000) {
 
     let properties = headerArray.filter(e => e.includes("property"));
 
-    // TODO: all this could be a single for loop but..
+    // TODO: all this could be a single for loop but...
     let shPropertyIndices = properties.flatMap((text, i) => text.includes("f_") ? i : []);
     let vertexPropertyIndices = properties.flatMap((text, i) => !text.includes("f_") ? i : []);
     
@@ -91,7 +90,6 @@ function parseHeader(headerString, maxVerts = 500000) {
         nVertices           : nVertices,
         nProperties         : properties.length,
         propertyNames       : properties, // TODO: could do everything with this tbh
-        // nShCoeffs           : nShCoeffs,
         shPropertyIndices   : shPropertyIndices,
         vertexPropertyIndices : vertexPropertyIndices
     }
@@ -205,8 +203,12 @@ function InvCovarianceMatrix3d(scaleVector, rotationVector) {
     return inverse(CovarianceMatrix3d(scaleVector, rotationVector));
 }
 
+/** Function to go from [1,2,3,4,5,6,7,8,9] -> [1,2,3,0,4,5,6,0,7,8,9,0]
+ * 
+ * @param {*} array 
+ * @returns 
+ */
 function AddFourthDimension(array) {
-    // Function to go from [1,2,3,4,5,6,7,8,9] -> [1,2,3,0,4,5,6,0,7,8,9,0]
     var out = new Float32Array(pad(array.length + 1));
     var offset = 0;
     for (let i = 0; i < array.length; i++) {
@@ -218,40 +220,39 @@ function AddFourthDimension(array) {
     return out;    
 }
 
+/** Parse the body of a .ply file to return the typed arrays of the vertex data and the spherical harmonics
+ * 
+ * @param {*} header 
+ * @param {*} bodyBuffer 
+ * @returns 
+ */
 function parseBody(header, bodyBuffer) {
     // NB TODO: I think there can also be uint8's - not just floats so maybe have to change this everything will break if not floats
     const vertexSize = header.nProperties * BYTES_PER_PROPERTY;
+    var n = 0; // n_vertices
 
     // Float32Arrays to store the vertices 
     const vertices = new Float32Array(header.nVertices * 16);
     const vertexPositions = [];
     const sphericalHarmonics = new Float32Array(header.nVertices * 64); 
-    const invCovMatrices = new Float32Array(header.nVertices * pad(9)); // Cotains 3x3 matrices 
-
-    var n = 0; // n_vertices
 
     // Parse the vertices, split on whether they are are vertex data or sh data
     for (let i = 0; i < header.nVertices; i++) {
         let vertexSlice = new Float32Array(bodyBuffer, i * vertexSize, header.nProperties);
-        var rotation = [];
-        var scale = [];
-        var position = [];
-        var normal = [];
-        var opacity = 1.0;
+        var rotation = []; var scale = []; var position = []; var normal = []; var opacity = 1.0;
         
         for (let j = 0; j < header.nProperties; j++) {
-
             // x,y,z,nx,ny,nz,opacity,scale,rot
             if (header.vertexPropertyIndices.includes(j)) {
                 if (header.propertyNames[j].includes("float x") || header.propertyNames[j].includes("float y") || header.propertyNames[j].includes("float z")) {
                     position.push(vertexSlice[j]);
                 }
                 if (header.propertyNames[j].includes('scale_')) {
-                    vertexSlice[j] = Math.exp(vertexSlice[j]);
+                    vertexSlice[j] = Math.exp(vertexSlice[j]); // Take exp of scale
                     scale.push(vertexSlice[j]);
                 }
                 if (header.propertyNames[j].includes('opacity')) {
-                    opacity = Sigmoid(vertexSlice[j]);
+                    opacity = Sigmoid(vertexSlice[j]); // Take sigmoid of opacity
                 }
                 if (header.propertyNames[j].includes('rot_')) {
                     rotation.push(vertexSlice[j]);
@@ -277,7 +278,6 @@ function parseBody(header, bodyBuffer) {
         vertices.set(rotation,  8 + n * 16);
         vertices.set(normal,   12 + n * 16);
         vertexPositions.push(position.slice(0,3));
-        // invCovMatrices.set(AddFourthDimension(flatten(InvCovarianceMatrix3d(scale, rotation))), n * pad(9));
 
         // TODO: This not exactly nice, and should be cleaned up
         // Set the first set of spherical harmonics
@@ -304,8 +304,7 @@ function parseBody(header, bodyBuffer) {
         n_vertices: n,
         vertices : vertices.slice(0, n * 16), // How many vertices did we actually read x how many nums per vertex are we storing
         vertexPositions: vertexPositions,
-        sphericalHarmonics : sphericalHarmonics,
-        invCovMatrices : invCovMatrices
+        sphericalHarmonics : sphericalHarmonics
     };
 }
 
@@ -338,6 +337,11 @@ function argSortByDistanceTo(vertexPositions, refPoint) {
     );
 }
 
+/** Read a user specified file from the file-input element
+ * 
+ * @param {*} callback 
+ * @returns 
+ */
 function readInputFile(callback) {
     if (this.files.length === 0) {
         console.log("No file selected");
@@ -365,6 +369,11 @@ function readInputFile(callback) {
     reader.readAsArrayBuffer(file);
 }
 
+/** Read a local file on the computer, this only works when Chrome is launched in unsafe mode and should just be used for local development
+ * 
+ * @param {*} fileName the path of the file
+ * @param {*} callback 
+ */
 function readLocalFile(fileName, callback) {
     showLoadingText();
     var request = new XMLHttpRequest(); 
@@ -383,6 +392,11 @@ function readLocalFile(fileName, callback) {
 }
 
 
+/** Helper function to print time per frame
+ * 
+ * @param {*} milliseconds 
+ * @returns 
+ */
 function formatTime(milliseconds) {
     let seconds = (milliseconds / 1000).toFixed(2); // Convert to seconds and round to 2 decimal places
     let minutes = (milliseconds / 60000).toFixed(2); // Convert to minutes and round to 2 decimal places
