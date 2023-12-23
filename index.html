@@ -18,8 +18,8 @@
         
         const TMIN: f32 = 0.0;
         const TMAX: f32 = 1000.0;
-        const MAXINTERSECTIONS: i32 = 10;
-        const BACKGROUNDCOLOR: vec4f = vec4f(1); // white
+        const MAXINTERSECTIONS: i32 = 1;
+        const BACKGROUNDCOLOR: vec4f = vec4f(0); // white
 
         // See: https://en.wikipedia.org/wiki/Table_of_spherical_harmonics
         const SH_C0 = 0.28209479177387814;
@@ -299,6 +299,27 @@
             return amplitude * exp(-distance_squared / 2.0);
         }
 
+        fn sample_gaussian(gaussian: Gaussian, point: vec3f) -> f32 {
+            let rot_matrix: mat3x3f = quaternion_to_matrix(gaussian.rotation);
+            let translated_point: vec3<f32> = point - gaussian.position.xyz;
+            let rotated_point: vec3<f32> = rot_matrix * translated_point;
+            let scaled_point: vec3<f32> = rotated_point / gaussian.scale;
+
+            let exponent: f32 = -0.5 * dot(scaled_point, scaled_point);
+            return exp(exponent);
+        }
+        // def gaussian_3d(scale, rotation, position, point):
+        //     """ Sample a 3D Gaussian defined by scale, rotation, and position at a given point. """
+        //     # Convert quaternion to rotation matrix
+        //     rot_matrix = quaternion_to_matrix(rotation)
+
+        //     # Apply the inverse rotation to the point
+        //     rotated_point = np.dot(rot_matrix.T, point - position[:3])
+
+        //     # Calculate the Gaussian
+        //     power = -0.5 * np.sum((rotated_point / scale) ** 2)
+        //     return math.exp(power)
+
         fn calculate_alpha(hit: HitInfo, sd:f32, amp: f32) -> f32 {
 
             // Gaussian function parameters
@@ -312,7 +333,7 @@
             var current_point: vec3f = hit.entry;
 
             for (var i: i32 = 0; i < step_count; i++) {
-                total_opacity += gaussian_value(current_point, hit.gaussian.position, hit.gaussian.scale, sigma, amplitude);
+                total_opacity += sample_gaussian(hit.gaussian, current_point);//gaussian_value(current_point, hit.gaussian.position, hit.gaussian.scale, sigma, amplitude);
                 current_point += step_vector;
             }
             total_opacity /= f32(step_count);
@@ -404,6 +425,50 @@
 
             return true;
         }
+
+        fn intersect_test(ray: ptr<function, Ray>, gaussian: Gaussian, color: vec4f, hit: ptr<function, HitInfo>) -> bool {
+            let translated_ray_origin = (*ray).origin - gaussian.position;
+            
+            // Apply inverse rotation to the ray to align with the ellipsoid's axes
+            let rotated_ray_origin = inverse_rotate_vector(translated_ray_origin, gaussian.rotation);
+            let rotated_ray_direction = inverse_rotate_vector((*ray).direction, gaussian.rotation);
+
+            // Scale the ray for the ellipsoid's local space
+            let origin_normalized = rotated_ray_origin / gaussian.scale;
+            let direction_normalized = rotated_ray_direction / gaussian.scale;
+
+            // Check if the ray originates inside the ellipsoid
+            if (dot(origin_normalized, origin_normalized) < 1.0) {
+                return false;
+            }
+
+            let a = dot(direction_normalized, direction_normalized);
+            let b = dot(origin_normalized, direction_normalized);
+            let c = dot(origin_normalized, origin_normalized);
+            let discriminant = b * b - a * (c - 1.0);
+            if (discriminant < 0.0) {
+                return false;
+            }
+
+            let sqrt_discriminant = sqrt(discriminant);
+            let t1 = (-b - sqrt_discriminant) / a;
+            let t2 = (-b + sqrt_discriminant) / a;
+            let t = min(t1,t2);
+
+            if (t < (*ray).t_min) {//|| (*ray).t_max < max(t1,t2)) {
+                return false;
+            }
+
+            (*hit).gaussian = gaussian;
+            (*hit).entry = (*ray).origin + (*ray).direction * t;
+            (*hit).exit = (*ray).origin + (*ray).direction * max(t1,t2);
+            (*hit).normal = calculate_rotated_normal((*hit).entry, gaussian);
+            (*hit).dist = t;
+            (*hit).material = Material();
+            (*hit).material.color = color;
+
+            return true;
+        }
         
         // PLEASE NOTE: This function is copied from: https://github.com/cvlab-epfl/gaussian-splatting-web/blob/905b3c0fb8961e42c79ef97e64609e82383ca1c2/src/shaders.ts#L1
         fn compute_color_from_sh(position: vec3f, sh: array<vec3f, 16>) -> vec4f {
@@ -471,48 +536,49 @@
             var accumulated_alpha: f32 = 1.0;
             
             // Scene description for debugging simple ellipsoids
-            // let default_material: Material = Material();
-            // var red = default_material;
-            // var blue = default_material;
-            // var green = default_material;
-            // red.color = vec4f(1.0, 0.0, 0.0, 1);
-            // blue.color = vec4f(0.0, 0.0, 1.0, 1);
-            // green.color = vec4f(0.0, 1.0, 0.0, 1);
+            let default_material: Material = Material();
+            var red = default_material;
+            var blue = default_material;
+            var green = default_material;
+            red.color = vec4f(1.0, 0.0, 0.0, 1);
+            blue.color = vec4f(0.0, 0.0, 1.0, 1);
+            green.color = vec4f(0.0, 1.0, 0.0, 1);
 
-            // var redg: Gaussian = Gaussian(
-            //     vec3f(0,0,0),   // pos
-            //     vec3f(1,1,1),   // scale
-            //     vec4f(0,0,0,1), // rotation
-            //     vec4f(1,1,1, 0),   // normal
-            // );
-            // var blueg: Gaussian = Gaussian(
-            //     vec3f(0,1,0),   // pos
-            //     vec3f(1,1,1),   // scale
-            //     vec4f(0,0,0,1),
-            //     vec4f(1,1,1, 0),   // normal
-            // );
-            // var greeng: Gaussian = Gaussian(
-            //     vec3f(0,0.5,0.87),   // pos
-            //     vec3f(1,1,1),   // scale
-            //     vec4f(0,0,0,1),     // rotation
-            //     vec4f(1,1,1, 0),   // normal
-            // );
-            // var g = array<Gaussian, 3>(blueg, redg, greeng);
-            // var m = array<Material, 3>( blue, red, green);
+            var redg: Gaussian = Gaussian(
+                vec3f(0,0,0),   // pos
+                vec3f(1,1,1),   // scale
+                vec4f(0,0,0,1), // rotation
+                vec4f(1,1,1, 0),   // normal
+            );
+            var blueg: Gaussian = Gaussian(
+                vec3f(0,1,0),   // pos
+                vec3f(1,1,1),   // scale
+                vec4f(0,0,0,1),
+                vec4f(1,1,1, 0),   // normal
+            );
+            var greeng: Gaussian = Gaussian(
+                vec3f(0,0.5,0.87),   // pos
+                vec3f(1,1,1),   // scale
+                vec4f(0,0,0,1),     // rotation
+                vec4f(1,1,1, 0),   // normal
+            );
+            var g = array<Gaussian, 3>(blueg, redg, greeng);
+            var m = array<Material, 3>( blue, red, green);
             // Testing of hard coded ellipsoids / spheres
-            // for (var i: u32 = 0; i < 3; i++) {
-            //     var hit = HitInfo();
-            //     if (intersect_test(ray, g[i], m[i], &hit)) {
-            //         intersections[n_intersections] = hit;
-            //         n_intersections += 1;
-            //     }
-            // }
-
-            if (intersect_min_max(ray)) {
-                // Remove the gaussians too close by
-                (*ray).t_min = 1;
-                intersect_bsp_tree(ray, &intersections, &n_intersections);
+            for (var i: u32 = 0; i < 1; i++) {
+                var hit = HitInfo();
+                if (intersect_test(ray, g[i], m[i].color, &hit)) {
+                    intersections[n_intersections] = hit;
+                    n_intersections += 1;
+                }
             }
+
+            // if (intersect_min_max(ray)) {
+            //     // Remove the gaussians too close by
+            //     (*ray).t_min = 1;
+            //     intersect_bsp_tree(ray, &intersections, &n_intersections);
+            // }
+            
             
             // Alpha-blending
             for (var i: i32 = n_intersections - 1; 0 <= i; i--) {
@@ -536,6 +602,13 @@
             var ray = get_camera_ray(uv);
             var shaded_result: vec4f = intersect_scene(&ray);
             
+            let a = gaussians[0];
+            let b = spherical_harmonics[0];
+            var e = aabb;
+            var f = tree_ids[0];
+            var g = bsp_tree[0];
+            var h = bsp_planes[0];
+
             let curr_sum: vec3f = textureLoad(renderTexture, vec2u(fragcoord.xy), 0).rgb * f32(uniforms.frame_number); 
             var accum_color = (shaded_result.rgb + curr_sum)/(uniforms.frame_number + 1);
 

@@ -46,7 +46,7 @@ var uniforms = {
     "camera_up_vector" : 1.0, 
 };
 // Add camera to uniforms, swap camera depending on scene. Camera should be part of scene description i think
-uniforms = Object.assign({}, uniforms, camera1);
+uniforms = Object.assign({}, uniforms, camera0);
 
 var uniformBuffer;
 var drawingInfo;
@@ -220,34 +220,34 @@ window.onload = async function () {
 
     // Good for local development, requires chrome in unsafe mode: 
     // > open -a Google\ Chrome --args --allow-file-access-from-files
-    // readLocalFile("data/train.ply", function(response) {
-    //     const [headerString, bodyBuffer] = splitHeaderAndBody(response);
-    //     const header = parseHeader(headerString);
-    //     const drawingInfo = parseBody(header, bodyBuffer);
+    readLocalFile("data/train.ply", function(response) {
+        const [headerString, bodyBuffer] = splitHeaderAndBody(response);
+        const header = parseHeader(headerString);
+        const drawingInfo = parseBody(header, bodyBuffer);
         
-    //     bindGroup = configureBindGroup(device, drawingInfo, pipeline, textures);
+        bindGroup = configureBindGroup(device, drawingInfo, pipeline, textures);
 
-    //     hideLoadingText();
-    //     requestAnimationFrame(() => {
-    //         animate(device, context, pipeline, bindGroup, textures);
-    //     });
-    // });
-
-    document.getElementById('file-input').addEventListener('change', function() {
-        readInputFile.call(this, function(response) {
-            console.log("Read file", response);
-            const [headerString, bodyBuffer] = splitHeaderAndBody(response);
-            const header = parseHeader(headerString);
-            const drawingInfo = parseBody(header, bodyBuffer);
-            
-            bindGroup = configureBindGroup(device, drawingInfo, pipeline, textures);
-            
-            hideLoadingText();
-            requestAnimationFrame(() => {
-                animate(device, context, pipeline, bindGroup, textures);
-            });
+        hideLoadingText();
+        requestAnimationFrame(() => {
+            animate(device, context, pipeline, bindGroup, textures);
         });
     });
+
+    // document.getElementById('file-input').addEventListener('change', function() {
+    //     readInputFile.call(this, function(response) {
+    //         console.log("Read file", response);
+    //         const [headerString, bodyBuffer] = splitHeaderAndBody(response);
+    //         const header = parseHeader(headerString);
+    //         const drawingInfo = parseBody(header, bodyBuffer);
+            
+    //         bindGroup = configureBindGroup(device, drawingInfo, pipeline, textures);
+            
+    //         hideLoadingText();
+    //         requestAnimationFrame(() => {
+    //             animate(device, context, pipeline, bindGroup, textures);
+    //         });
+    //     });
+    // });
     
 
     /* Update zoom */
