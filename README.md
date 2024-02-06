@@ -3,8 +3,9 @@
 ## Note: This project is made as an exam project in the DTU course [Rendering (02562)](https://courses.compute.dtu.dk/02562/)
 
 
-This repository contains a WebGPU-based renderer for visualizing data from Gaussian Splatting Neural Radiance Fields. The project is an attempt at visualizing Gaussians with ray-casting, where the problem is modelled as rendering semi-transparent ellipsoids, representing the Gaussian Splatting process. 
-The work shows that this approach is not really suitable - but very novel - this means images aren't as good looking as had they been rendered using traditional gaussian splattering with the blobs projected onto 2D planes etc. The results, although not photo-realistic are quite stylistic and could probably be made better with some more work. 
+This repository contains an implementation of a WebGPU-based renderer for visualizing data from Gaussian Splatting Neural Radiance Fields. The project is an attempt at visualizing Gaussians with ray-casting, where the problem is modelled as rendering semi-transparent ellipsoids, representing the Gaussian Splatting process.
+The work shows that this approach is not really suitable - but very novel - this means images aren't as good looking as had they been rendered using traditional gaussian splattering with the blobs projected onto 2D planes etc. 
+The results, although not photo-realistic are quite stylistic and could probably be made better with some more work. 
 
 ## Usage
 
